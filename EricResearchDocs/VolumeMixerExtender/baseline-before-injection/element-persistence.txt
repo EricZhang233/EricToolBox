@@ -1,0 +1,24 @@
+=== CYCLE 1 (open) ===
+  panel hwnd   : 0x000100FE
+  xaml host    : 0x000302A6
+  PageWindow   : 42.197286.4.76
+  ListContent  : 42.197286.4.74
+  AppVolumeLevel: 42.197286.4.68
+  Footer       : 42.197286.4.75
+  '更多音量设置' Button : 42.197286.4.77
+
+=== closing panel ... ===
+  fg now : [Chrome_WidgetWin_1]
+
+=== CYCLE 2 (reopen) ===
+  panel hwnd   : 0x000100FE   (same as cycle 1? True)
+  xaml host    : 0x000302A6
+  PageWindow   : 42.197286.4.114
+  ListContent  : 42.197286.4.112
+  AppVolumeLevel: 42.197286.4.106
+  Footer       : 42.197286.4.113
+  '更多音量设置' Button : 42.197286.4.115
+
+=== VERDICT ===
+  REBUILT: element instances differ after reopen (survivors: none)
+  -> hooking element creation IS a viable trigger.

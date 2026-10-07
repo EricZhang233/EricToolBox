@@ -1,0 +1,42 @@
+注入过程节选 —— 只保留判定注入是否成功所需的日志行
+========================================================================
+
+来源      : .research/poc/vcxtap.log（完整原文见同目录 03-tap-injection-full.log）
+采集时间  : 2026-10-03 02:00:26（一次干净 cycle：停 shell -> 重启 explorer -> 注入 -> 打开面板）
+环境      : Windows 11 build 26300.9550 / ShellHost.exe 原生 System XAML / 会话 2
+生成的    : 由 _gather2.ps1 按关键字过滤，未改写任何行内容
+
+怎么读这份日志（三个 ★ 是排障的全部关键）:
+  ★1 'TAP 就绪'          -> TAP 已被 XAML core 加载、拿到诊断接口、开始收事件
+  ★2 'Footer appeared'   -> 声音输出页的底栏元素出现了（匹配成功）
+  ★3 'wrapped the row'   -> 注入成功：原行被包进两列 Grid，按钮落在同一行右侧
+中间断在哪一个，就直接定位到交付文档 §4.1.4 / §4.2.4 / §5.1 的对应小节。
+
+注意 up[] 那十行：它打印的是模型按钮的祖先链，是 §5.1 定位算法的唯一现场证据。
+  up[3] = StackPanel [Vertical]  <-- 底栏 ItemsPanel 是纵向的，这就是必须包 Grid 的根本原因
+
+========================================================================
+
+[02:00:21.602 tid=12588] vcxtap loaded: pid=8420 stage=2
+[02:00:21.606 tid=12588] Tap::SetSite(site=00000255EEEA0990)
+[02:00:21.606 tid=12588]    QI IXamlDiagnostics  hr=0x00000000 ptr=00000255EEEA0990
+[02:00:21.606 tid=12588]    QI IVisualTreeService hr=0x00000000 ptr=00000255EEEA0998
+[02:00:21.610 tid=12588]    AdviseVisualTreeChange hr=0x00000000
+[02:00:26.399 tid=12588] *** Footer appeared: type=[Windows.UI.Xaml.Controls.ItemsControl] handle=255F221CDA8 children=0
+[02:00:26.593 tid=12588]    injecting into Footer (class=Windows.UI.Xaml.Controls.ItemsControl)
+[02:00:26.593 tid=12588]    style model button = Windows.UI.Xaml.Controls.Button
+[02:00:26.593 tid=12588]       up[0] Windows.UI.Xaml.Controls.ContentPresenter
+[02:00:26.593 tid=12588]       up[1] Windows.UI.Xaml.Controls.ContentControl
+[02:00:26.593 tid=12588]       up[2] Windows.UI.Xaml.Controls.ContentPresenter
+[02:00:26.593 tid=12588]       up[3] Windows.UI.Xaml.Controls.StackPanel [Vertical]
+[02:00:26.593 tid=12588]       up[4] Windows.UI.Xaml.Controls.ItemsPresenter
+[02:00:26.593 tid=12588]       up[5] Windows.UI.Xaml.Controls.ItemsControl
+[02:00:26.593 tid=12588]       up[6] Windows.UI.Xaml.Controls.Border
+[02:00:26.593 tid=12588]       up[7] Windows.UI.Xaml.Controls.ContentPresenter
+[02:00:26.593 tid=12588]       up[8] Windows.UI.Xaml.Controls.StackPanel [Vertical]
+[02:00:26.593 tid=12588]       up[9] Windows.UI.Xaml.Controls.ItemsPresenter
+[02:00:26.593 tid=12588]    model metrics: Height=40.0 MinHeight=0.0 ActualH=40.0 Style=yes
+[02:00:26.593 tid=12588]    -> TestLink height forced to 40.0
+[02:00:26.593 tid=12588]    wrapped the row container (class=Windows.UI.Xaml.Controls.ContentPresenter) inside the Windows.UI.Xaml.Controls.StackPanel in a 2-column Grid
+[02:00:26.593 tid=12588]    *** TestLink injected on the SAME row as the model button (right aligned) ***
+[02:00:26.593 tid=12588]    *** TestLink injected (click -> winver.exe) ***

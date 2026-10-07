@@ -1,0 +1,776 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>自定义页布局草案 · VolumeMixerExtender</title>
+<style>
+  :root{
+    --w: 358px;
+    --h: 396px;
+    --bg-panel: #202020;
+    --bg-card: rgba(255,255,255,.0512);
+    --bg-card-hover: rgba(255,255,255,.0837);
+    --stroke: rgba(255,255,255,.0698);
+    --stroke-strong: rgba(255,255,255,.25);
+    --fg: #ffffff;
+    --fg-2: #c8c8c8;
+    --fg-3: #9a9a9a;
+    /* 实测换算：系统底栏按钮文字 = TextFillColorSecondary（等效 #9E000000 / #9EFFFFFF）。
+       亮色面板上取到核心 #5a535b，背景 #e8d4e8 —— 恰好是 60.6% 前景叠底，中性灰、非强调色。
+       换算到本 mock 的深色底即下面这个值。 */
+    --fg-secondary: #a9a9a9;
+    --accent: #4cc2ff;
+    --accent-dim: rgba(76,194,255,.35);
+    --scale: 1.7;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:#0d0d0d;
+    color:var(--fg);
+    font-family:"Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",system-ui,sans-serif;
+    font-size:14px;
+    padding:28px 32px 80px;
+    min-height:100vh;
+  }
+  h1{font-size:19px;font-weight:600;letter-spacing:.2px}
+  .sub{color:var(--fg-3);font-size:13px;margin-top:6px;line-height:1.7}
+  .sub code{background:rgba(255,255,255,.08);padding:1px 5px;border-radius:4px;font-size:12px}
+
+  .stage{display:flex;gap:44px;align-items:flex-start;flex-wrap:wrap}
+  .frame{display:flex;flex-direction:column;gap:10px}
+  .cap{font-size:13px;color:var(--fg-2);padding-left:2px}
+
+  /* 把一个 358x396 的真实尺寸面板，整体等比放大便于查看 */
+  .zoom{
+    width:calc(var(--w) * var(--scale));
+    height:calc(var(--h) * var(--scale));
+    position:relative;
+  }
+  .panel{
+    width:var(--w);height:var(--h);
+    position:absolute;top:0;left:0;
+    transform:scale(var(--scale));transform-origin:top left;
+    background:linear-gradient(160deg,#242424,#1c1c1c);
+    border:1px solid rgba(255,255,255,.09);
+    border-radius:10px;
+    display:flex;flex-direction:column;
+    overflow:hidden;
+    box-shadow:0 18px 50px rgba(0,0,0,.6);
+  }
+
+  /* ---- 标题行（系统保留，不可改） ---- */
+  .titlebar{
+    height:40px;flex:0 0 40px;
+    display:flex;align-items:center;gap:8px;
+    padding:0 13px;
+  }
+  .iconbtn{
+    width:32px;height:32px;flex:0 0 32px;border-radius:5px;
+    display:flex;align-items:center;justify-content:center;
+    color:var(--fg-2);
+  }
+  .iconbtn:hover{background:var(--bg-card)}
+  .title{font-size:14px;font-weight:600}
+
+  /* ---- 内容区 ---- */
+  /* 主体左右内缩 8px（比底栏的 4px 更深一档：底栏跟系统对齐、内容多留点气）。
+     ⚠️ 行内元素**不要**再各自加左右内缩：两层叠加会让"底栏 4 / 内容 8"这个刻意的差值失控。 */
+  .content{flex:1 1 auto;overflow-y:auto;padding:0 8px 8px}
+  .content::-webkit-scrollbar{width:0}
+
+  .seclabel{
+    display:flex;align-items:center;gap:8px;
+    font-size:12px;color:var(--fg-3);
+    margin:10px 0 6px;padding-left:0;
+  }
+  .grow{flex:1}
+
+  /* ---- 复选框（录制模式） ---- */
+  /* 注意：WinUI 的 CheckBox 默认 MinHeight=32、方框 20px，会把这行标题撑高。
+     实测/实施时要用紧凑模板（MinHeight=0 + 16px 方框）。 */
+  .check{
+    display:inline-flex;align-items:center;gap:6px;cursor:pointer;
+    color:var(--fg-secondary);font-size:12px;
+  }
+  .check input{position:absolute;opacity:0;width:1px;height:1px}
+  .check .box{
+    width:16px;height:16px;flex:0 0 16px;border-radius:4px;
+    border:1px solid rgba(255,255,255,.45);
+    display:flex;align-items:center;justify-content:center;
+    transition:background .1s,border-color .1s;
+  }
+  .check .box svg{opacity:0;transition:opacity .1s}
+  .check:hover .box{border-color:rgba(255,255,255,.7)}
+  .check input:checked + .box{background:var(--accent);border-color:var(--accent)}
+  .check input:checked + .box svg{opacity:1}
+  .check input:focus-visible + .box{outline:2px solid var(--accent);outline-offset:2px}
+
+  /* ---- 下拉框 ---- */
+  .combo{
+    height:34px;display:flex;align-items:center;gap:8px;
+    background:var(--bg-card);
+    border:1px solid var(--stroke);
+    border-bottom:1px solid var(--stroke-strong);
+    border-radius:5px;
+    padding:0 10px;
+    margin-bottom:2px;
+  }
+  .combo:hover{background:var(--bg-card-hover)}
+  .combo .name{flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .combo .chev{color:var(--fg-3);display:flex}
+
+  /* ---- 应用列表 ---- */
+  .list{margin-top:2px}
+  .row{
+    display:flex;align-items:center;gap:9px;
+    min-height:44px;padding:0 6px 0 4px;border-radius:5px;
+  }
+  .row:hover{background:var(--bg-card)}
+  .appicon{
+    width:24px;height:24px;flex:0 0 24px;border-radius:4px;
+    display:flex;align-items:center;justify-content:center;
+    font-size:12px;
+  }
+  .mute{width:28px;height:28px;flex:0 0 28px;border-radius:5px;display:flex;align-items:center;justify-content:center;color:var(--fg-2)}
+  .mute:hover{background:var(--bg-card-hover)}
+  .mute.on{color:var(--fg-3)}
+  .slider{
+    width:96px;flex:0 0 96px;height:18px;display:flex;align-items:center;
+    position:relative;cursor:pointer;
+  }
+  .track{position:absolute;left:0;right:0;height:4px;border-radius:2px;background:rgba(255,255,255,.22)}
+  .fill{position:absolute;left:0;height:4px;border-radius:2px;background:var(--accent-dim)}
+  .knob{
+    position:absolute;width:12px;height:12px;border-radius:50%;
+    background:#fff;transform:translateX(-50%);
+    box-shadow:0 0 0 1px rgba(0,0,0,.3);
+  }
+  .row:hover .fill{background:var(--accent)}
+  .row:hover .knob{width:15px;height:15px}
+
+  /* 端点音量里的"折叠组"行（输入设备）：右侧没有静音/音量条，只有一个展开箭头 */
+  .grp{cursor:pointer}
+  .grp .chev{width:28px;flex:0 0 28px;display:flex;align-items:center;justify-content:center;color:var(--fg-3);transition:transform .12s}
+  .grp[aria-expanded="true"] .chev{transform:rotate(90deg)}
+  .grpbody[hidden]{display:none}
+  .grpbody .row{padding-left:28px}
+
+  /* 名称区：正常一行；名称过长时最多折两行，重定向时名称下补一行端点。
+     宽度始终不变，只有高度按需长高。 */
+  .appmeta{flex:1;min-width:0}
+  .appmeta .nm{
+    font-size:13px;line-height:1.25;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+  }
+  .appmeta .route{
+    font-size:11px;line-height:1.25;color:var(--accent);margin-top:1px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .appmeta .route::before{content:"→ ";opacity:.75}
+
+  /* ---- 设置页 ---- */
+  /* ⚠️ 类名不要用 .fill / .track / .knob —— 那是音量条滑块的，属性会互相泄漏
+     （position:absolute 泄漏进去会让 flex 失效）。这里统一加 sw 前缀。 */
+  .content.col{display:flex;flex-direction:column}
+  .gapfill{flex:1 1 auto;min-height:12px}
+
+  .setrow{
+    display:flex;align-items:center;gap:9px;
+    min-height:44px;padding:0;border-radius:5px;
+  }
+  .setrow:hover{background:var(--bg-card)}
+
+  /* 开关（WinUI ToggleSwitch 外观）：40x20 胶囊 + 12px 圆钮 */
+  .switch{position:relative;display:inline-flex;align-items:center;cursor:pointer;flex:0 0 auto}
+  .switch input{position:absolute;opacity:0;width:1px;height:1px}
+  .swtrack{
+    width:40px;height:20px;flex:0 0 40px;border-radius:10px;
+    border:1px solid rgba(255,255,255,.55);
+    display:flex;align-items:center;padding:2px;
+    transition:background .12s,border-color .12s;
+  }
+  .swthumb{
+    width:12px;height:12px;border-radius:50%;background:rgba(255,255,255,.8);
+    transition:transform .12s,background .12s;
+  }
+  .switch:hover .swtrack{border-color:rgba(255,255,255,.8)}
+  .switch input:checked + .swtrack{background:var(--accent);border-color:var(--accent)}
+  .switch input:checked + .swtrack .swthumb{transform:translateX(22px);background:#fff}
+  .switch input:focus-visible + .swtrack{outline:2px solid var(--accent);outline-offset:2px}
+
+  /* 危险操作：置底，用 critical 色（深色主题 = #FF99A4） */
+  .danger{
+    height:40px;border-radius:5px;flex:0 0 40px;
+    display:flex;align-items:center;justify-content:center;
+    font-size:13px;white-space:nowrap;
+    color:#e5484d;
+    border:1px solid rgba(229,72,77,.45);
+    background:rgba(229,72,77,.06);
+  }
+  .danger:hover{background:rgba(229,72,77,.15);border-color:rgba(229,72,77,.7)}
+  /* 连击计数中：给一个比 hover 更亮的"已武装"态，看得见计时器还活着 */
+  .danger.arm{background:rgba(229,72,77,.22);border-color:rgba(229,72,77,.9)}
+  .danger.done{color:#a9a9a9;border-color:rgba(255,255,255,.2);background:transparent}
+
+  /* ---- 底栏（系统保留，我们改内容） ---- */
+  /* 底栏 = 三格网格，中格居中在【底栏】上，而不是居在左右两格的"剩余空间"上。
+     用 flex 的 [项][flex:1][项][flex:1][项] 会让中格落在 中心 + (左宽−右宽)/2：
+     自定义页只偏 4px（82 vs 90）看不出来，设置页偏 19px（60 vs 98）就很明显。
+     实测见 docs/verified-after-injection/13-footer-mount.md §3。 */
+  .footerbar{
+    height:48px;flex:0 0 48px;
+    display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
+    padding:0 4px;
+  }
+  .footerbar > :first-child{justify-self:start}
+  .footerbar > :last-child{justify-self:end}
+  /* 底栏项 = 文字式按钮，与系统一致（实测）：静止时无边框、无填充，
+     只有一个 40px 高的悬停热区。几何实测：模型按钮 94x40 = 文字 72 + 左右各 11px；
+     字号 12（「更多音量设置」6 个汉字正好 72px，故 1 字 = 12px = 1em）。
+     底栏内缩 4px（模型按钮 x=2193，底栏 x=2189）。 */
+  .fbtn{
+    height:40px;display:flex;align-items:center;
+    padding:0 11px;border-radius:4px;
+    font-size:12px;white-space:nowrap;
+    color:var(--fg-secondary);
+  }
+  .fbtn:hover{background:var(--bg-card)}
+  .fbtn.ph{opacity:.45}
+  .spacer{flex:1}
+
+  /* ---- 注释 ---- */
+  .notes{margin-top:26px;max-width:620px}
+  .notes h2{font-size:14px;font-weight:600;margin:18px 0 8px;color:#fff}
+  .notes ul{margin:0 0 0 18px;color:var(--fg-2);font-size:13px;line-height:1.85}
+  .notes li b{color:#fff;font-weight:600}
+  .tag{
+    display:inline-block;font-size:11px;padding:1px 6px;border-radius:4px;
+    background:rgba(76,194,255,.15);color:var(--accent);margin-left:6px
+  }
+  .tag.sys{background:rgba(255,255,255,.1);color:var(--fg-3)}
+  .hint{
+    margin-top:10px;padding:10px 14px;border-left:2px solid var(--accent);
+    background:rgba(76,194,255,.07);border-radius:0 6px 6px 0;
+    font-size:12.5px;color:var(--fg-2);line-height:1.8;max-width:620px
+  }
+</style>
+</head>
+<body>
+
+<h1>自定义页 · 布局草案</h1>
+<div class="sub">
+  真实尺寸 <code>358 × 396</code>，按 1.7 倍放大显示。<br>
+  内容区可用高度约 <code>308px</code> —— 这个数字决定了应用列表必须紧凑并滚动。
+</div>
+
+<div class="stage">
+  <div class="frame">
+    <div class="cap">自定义页</div>
+  <div class="zoom">
+    <!-- ================= 自定义页 ================= -->
+    <div class="panel" id="pCustom">
+      <div class="titlebar">
+        <div class="iconbtn">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="title">声音输出</div>
+      </div>
+
+      <div class="content">
+        <div class="seclabel">
+          <span id="outLabel">默认输出设备</span>
+          <span class="grow"></span>
+          <label class="check">
+            <input type="checkbox" id="recMode">
+            <span class="box">
+              <svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                <path d="M2.6 6.3l2.2 2.2L9.4 3.9" stroke="#101010" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
+            <span>录制模式</span>
+          </label>
+        </div>
+        <div class="combo">
+          <span class="name">扬声器 (Realtek(R) Audio)</span>
+          <span class="chev">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <path d="M2.5 4.5L6 8l3.5-3.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+        </div>
+
+        <div class="seclabel">默认输入设备</div>
+        <div class="combo">
+          <span class="name">麦克风阵列 (Intel® Smart Sound)</span>
+          <span class="chev">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <path d="M2.5 4.5L6 8l3.5-3.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+        </div>
+
+        <div class="seclabel">端点音量</div>
+        <div class="list dev">
+          <div class="row">
+            <div class="appicon" style="color:var(--fg-2)">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M8 3L4.5 6H2v4h2.5L8 13V3z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+                <path d="M10.5 6a3 3 0 010 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <div class="appmeta"><div class="nm">扬声器 (Realtek(R) Audio)</div></div>
+            <div class="mute">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M8 3L4.5 6H2v4h2.5L8 13V3z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <div class="slider"><div class="track"></div><div class="fill" style="width:72%"></div><div class="knob" style="left:72%"></div></div>
+          </div>
+          <div class="row">
+            <div class="appicon" style="color:var(--fg-2)">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M8 3L4.5 6H2v4h2.5L8 13V3z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+                <path d="M10.5 6a3 3 0 010 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <div class="appmeta"><div class="nm">耳机 (2- USB Audio)</div></div>
+            <div class="mute on">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M8 3L4.5 6H2v4h2.5L8 13V3z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+                <path d="M10.5 5.5l4 5M14.5 5.5l-4 5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <div class="slider"><div class="track"></div><div class="fill" style="width:45%"></div><div class="knob" style="left:45%"></div></div>
+          </div>
+          <div class="row">
+            <div class="appicon" style="color:var(--fg-2)">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M8 3L4.5 6H2v4h2.5L8 13V3z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+                <path d="M10.5 6a3 3 0 010 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <div class="appmeta"><div class="nm">显示器音频 (NVIDIA High Definition Audio)</div></div>
+            <div class="mute">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M8 3L4.5 6H2v4h2.5L8 13V3z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <div class="slider"><div class="track"></div><div class="fill" style="width:100%"></div><div class="knob" style="left:100%"></div></div>
+          </div>
+          <div class="row grp" id="inGroup" aria-expanded="false">
+            <div class="appicon" style="color:var(--fg-2)">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <rect x="6" y="2" width="4" height="7" rx="2" stroke="currentColor" stroke-width="1.2"/>
+                <path d="M3.8 7.3a4.2 4.2 0 008.4 0M8 11.7V14" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <div class="appmeta"><div class="nm">输入设备（2）</div></div>
+            <span class="chev">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path d="M4.5 2.5L8 6l-3.5 3.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
+          </div>
+          <div class="grpbody" id="inGroupBody" hidden>
+            <div class="row">
+              <div class="appicon" style="color:var(--fg-2)">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <rect x="6" y="2" width="4" height="7" rx="2" stroke="currentColor" stroke-width="1.2"/>
+                  <path d="M3.8 7.3a4.2 4.2 0 008.4 0M8 11.7V14" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                </svg>
+              </div>
+              <div class="appmeta"><div class="nm">麦克风阵列 (Intel® Smart Sound)</div></div>
+              <div class="mute">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M8 3L4.5 6H2v4h2.5L8 13V3z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+                </svg>
+              </div>
+              <div class="slider"><div class="track"></div><div class="fill" style="width:60%"></div><div class="knob" style="left:60%"></div></div>
+            </div>
+            <div class="row">
+              <div class="appicon" style="color:var(--fg-2)">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <rect x="6" y="2" width="4" height="7" rx="2" stroke="currentColor" stroke-width="1.2"/>
+                  <path d="M3.8 7.3a4.2 4.2 0 008.4 0M8 11.7V14" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                </svg>
+              </div>
+              <div class="appmeta"><div class="nm">立体声混音 (Realtek(R) Audio)</div></div>
+              <div class="mute on">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M8 3L4.5 6H2v4h2.5L8 13V3z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+                  <path d="M10.5 5.5l4 5M14.5 5.5l-4 5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                </svg>
+              </div>
+              <div class="slider"><div class="track"></div><div class="fill" style="width:80%"></div><div class="knob" style="left:80%"></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="seclabel">音量合成器</div>
+        <div class="list">
+          <div class="row">
+            <div class="appicon" style="background:#2b6cb0;color:#fff">系</div>
+            <div class="appmeta"><div class="nm">系统声音</div></div>
+            <div class="mute">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M8 3L4.5 6H2v4h2.5L8 13V3z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+                <path d="M10.5 6a3 3 0 010 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <div class="slider"><div class="track"></div><div class="fill" style="width:72%"></div><div class="knob" style="left:72%"></div></div>
+          </div>
+
+          <div class="row">
+            <div class="appicon" style="background:#3b8c4e;color:#fff">C</div>
+            <div class="appmeta">
+              <div class="nm" title="Google Chrome">Google Chrome</div>
+              <div class="route" title="耳机 (2- USB Audio)">耳机 (2- USB Audio)</div>
+            </div>
+            <div class="mute">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M8 3L4.5 6H2v4h2.5L8 13V3z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <div class="slider"><div class="track"></div><div class="fill" style="width:45%"></div><div class="knob" style="left:45%"></div></div>
+          </div>
+
+          <div class="row">
+            <div class="appicon" style="background:#1db954;color:#fff">S</div>
+            <div class="appmeta"><div class="nm">Spotify</div></div>
+            <div class="mute">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M8 3L4.5 6H2v4h2.5L8 13V3z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+                <path d="M10.5 6a3 3 0 010 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <div class="slider"><div class="track"></div><div class="fill" style="width:30%"></div><div class="knob" style="left:30%"></div></div>
+          </div>
+
+          <div class="row">
+            <div class="appicon" style="background:#7b3fa0;color:#fff">D</div>
+            <div class="appmeta"><div class="nm">Discord</div></div>
+            <div class="mute on">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M8 3L4.5 6H2v4h2.5L8 13V3z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+                <path d="M10.5 5.5l4 5M14.5 5.5l-4 5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <div class="slider"><div class="track"></div><div class="fill" style="width:60%"></div><div class="knob" style="left:60%"></div></div>
+          </div>
+
+          <div class="row">
+            <div class="appicon" style="background:#0f6cbd;color:#fff">T</div>
+            <div class="appmeta">
+              <div class="nm" title="Microsoft Teams (工作或学校)">Microsoft Teams (工作或学校)</div>
+              <div class="route" title="扬声器 (Realtek(R) Audio)">扬声器 (Realtek(R) Audio)</div>
+            </div>
+            <div class="mute">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M8 3L4.5 6H2v4h2.5L8 13V3z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+                <path d="M10.5 6a3 3 0 010 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <div class="slider"><div class="track"></div><div class="fill" style="width:85%"></div><div class="knob" style="left:85%"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="footerbar">
+        <div class="fbtn">清除重定向</div>
+        <div class="fbtn">设置</div>
+        <div class="fbtn">SystemMixer</div>
+      </div>
+    </div>
+  </div>
+  </div>
+
+  <div class="frame">
+    <div class="cap">设置页（从自定义页底栏「设置」进入）</div>
+    <div class="zoom">
+      <div class="panel" id="pSettings">
+        <div class="titlebar">
+          <div class="iconbtn">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <div class="title">设置</div>
+        </div>
+
+        <div class="content col">
+          <div class="seclabel">常规</div>
+          <div class="setrow">
+            <div class="appmeta"><div class="nm">开机启动</div></div>
+            <label class="switch" title="开机启动">
+              <input type="checkbox" id="autoStart" checked>
+              <span class="swtrack"><span class="swthumb"></span></span>
+            </label>
+          </div>
+          <div class="setrow">
+            <div class="appmeta"><div class="nm">显示驱动名</div></div>
+            <label class="switch" title="显示驱动名">
+              <input type="checkbox" id="showDriver" checked>
+              <span class="swtrack"><span class="swthumb"></span></span>
+            </label>
+          </div>
+
+          <div class="gapfill"></div>
+          <div class="danger" id="uninstall" title="连续单击 5 次确认卸载">从系统卸载</div>
+        </div>
+
+        <div class="footerbar">
+          <div class="fbtn" title="https://github.com/EricZhang233/VolumeMixerExtender">GitHub</div>
+          <div class="fbtn">返回</div>
+          <div class="fbtn ph">（占位）</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <h2>这一版的关键取舍</h2>
+    <ul>
+      <li><b>两个下拉框置顶</b><span class="tag">Body 第一顺位</span><br>系统页原本把「输出设备」做成单选列表（占 4~5 行），换成下拉框后同样的信息只占 1 行 —— 省下的高度全给应用列表。</li>
+      <li><b>端点音量独占一层</b><span class="tag">本次补上</span><br>
+        三层结构：<b>选默认设备</b>（两个下拉框）→ <b>每个设备各一条音量</b>（端点音量）→ <b>逐应用音量</b>（合成器）。<br>
+        位置按你定的：插在「默认输入设备」与「音量合成器」<b>之间</b>。<br>
+        <b>不是按通道做两条</b>（输出/输入各一条），而是<b>枚举每个端点各一条</b> —— 每台设备都能单独调音量和静音。
+        图标区分方向（喇叭 = 渲染端点、麦克风 = 采集端点），列表顺序是<b>渲染端点在前、采集端点在后</b>（不加分组标签）。<br>
+        行结构/app 行完全一致（图标 + 名称 + 静音 + 音量条），所以名称过长仍走"最多折两行"那条规则。</li>
+      <li><b>⚠️ 只列 ACTIVE 端点，且必须过滤掉 V</b><br>
+        按 <code>EnumAudioEndpoints(DEVICE_STATE_ACTIVE)</code> 枚举 ——「已禁用」「未插入」的设备不该出现在这里
+        （Windows 自己的列表也只列 ACTIVE）。<br>
+        ⚠️ 再加一条本项目特有的：<b>把虚拟设备 V 过滤掉</b>（与两个下拉框同一条硬约束）。
+        而且 V 的音量本来就硬锁 100%、调不动（方案 §5.2），列出来只会是个拖不动的死滑块。</li>
+      <li><b>⚠️ 录制模式下这一层仍然可用、而且正好补了方案的缺口</b><br>
+        能调的是<b>监听设备 R</b> 的音量 —— 方案 §5.4 说"录制时请到系统里调 R 的滑块"，
+        现在这个入口就长在我们页面上，不用切到系统去了。<br>
+        V 不在列表里，所以不存在"误调 V"的问题。</li>
+      <li><b>输入设备收成一个折叠组</b><span class="tag">默认收起</span><br>
+        渲染端点<b>逐条展开</b>（喇叭图标）；采集端点收成<b>一行「输入设备（N）」</b> + 展开箭头，
+        <b>默认不展开</b>；点一下展开、再点收起，子行缩进 28px 表示从属。<br>
+        ⇒ 真正的收益是<b>把高度封顶</b>：<b>输入侧不再随设备数增长</b>，页面高度只随渲染端点数量增长。<br>
+        ⚠️ 但它<b>没有变矮当前这一屏</b> —— 本图输入侧有 2 台，收起后占 1 行（44px），比全展开省 44px；
+        若只有 1 台输入设备，收起前后高度是一样的。</li>
+      <li><b>⚠️ 内容区仍然超出一屏</b><span class="tag">实测代价</span><br>
+        <b>收起态</b>（默认）：内容需要 <b>603px</b>，可用 <b>306px</b> ⇒ 超出 <b>297px</b>（约 6.75 行）。<br>
+        <b>展开输入设备</b>：需要 <b>691px</b> ⇒ 超出 <b>385px</b>。<br>
+        ⚠️ <b>渲染端点那一侧仍然不封顶</b> —— 本图只画了 3 台，真实机器上"扬声器 + 耳机 + HDMI + USB"
+        到 5~6 台很常见 ⇒ 再加 2~3 行（88~132px）。<br>
+        共用滚动区意味着打开时基本只看得到"两个下拉框 + 端点音量"，<b>应用列表要滚很远</b>。<br>
+        ✅ <b>已定：接受现状，不压缩</b> —— 共用滚动区本来就是设计的一部分，滚一下是预期操作不是缺陷。
+        行高保持 <code>44px</code>（与 app 行等高）。四个旋钮① 行用 40px；② <code>seclabel</code> 折进行内；
+        ③ 这一层限高 + 内部滚；④ 渲染端点也折叠 —— <b>全部不做</b>。</li>
+      <li><b>滑块不走 IPC，TAP 内直调 WASAPI</b><span class="tag">已定</span><br>
+        <code>Slider.ValueChanged</code> 拖动时每秒触发几十次 —— 走管道会打满管道、跟手感变差。
+        ⇒ <b>滑块流量一律不走 IPC</b>，<code>pipe</code> 继续只承载"点击/命令"。<br>
+        代价（都是必须实现的，不是可选优化）：<br>
+        ① <b>WASAPI 封装两边共链</b>（TAP + App 共用一份，⛔ 绝不写两份 —— 枚举顺序/V 过滤迟早不一致）；<br>
+        ② <b>外部改动要回写 UI</b>（键盘音量键改同一台设备时滑块得跟着动）⇒
+        <code>RegisterControlChangeNotify</code>，回调不在 UI 线程 ⇒ 必须 <code>Dispatcher.RunAsync</code>；<br>
+        ③ <b>得区分"拖动中"与"拖动结束"</b>，拖动中忽略外部回写否则会和手指打架 ——
+        WinUI <code>Slider</code> <b>没有</b> <code>IsDragging</code>，要用 <code>Thumb.DragStarted/DragCompleted</code>。</li>
+      <li><b>应用列表一行装完</b><br>图标 / 名称 / 静音 / 音量条横排在<b>同一行</b>。侧栏只有 358px 宽，双行排版（名称一行、音量条一行）会把可视应用数从 5 个压到 3 个。</li>
+      <li><b>行高从 44 起，按需长高</b><span class="tag">宽度不变</span><br>行宽恒定 330px，<b>绝不横向加宽</b>。高度只在这两种情况下长：① 名称过长（最多折两行，见 <code>Microsoft Teams (工作或学校)</code>）；② 该应用有重定向，名称下补一行端点（见 <code>Google Chrome</code> → <b>耳机 (2- USB Audio)</b>）。两者同时发生时，名称仍只占两行、端点那行不折。</li>
+      <li><b>端点行不折、超长省略</b><br>端点行是<b>单行 + 省略号</b>，全名放 <code>title</code>（悬停可见）。这样"有重定向"的行永远不会比"名称两行"的行更高，高度上限可算得出来：两行名称 ≈ 33px + 端点 ≈ 14px，整行封顶 ≈ 52px。</li>
+      <li><b>底栏项是「文字链接」，不是按钮</b><span class="tag">像素实测</span><br>
+        从 <code>docs/verified-after-injection/02-footer-screenshot.png</code> 逐像素取样：模型按钮
+        <code>94x40</code> 的整框内，除字形外<b>全是纯背景色</b> —— <b>无边框、无填充</b>。文字核心
+        <code>#5a535b</code>、背景 <code>#e8d4e8</code>，正好是 <b>60.6% 前景叠底</b>（<code>TextFillColorSecondary</code>），
+        且 R−B 差 = 0 ⇒ <b>中性灰，不是强调蓝</b>。<br>
+        所以底栏改成一排纯文字：静止无框无底，<b>只有一个 40px 高的悬停热区</b>；
+        <code>padding 0 11px</code> + <code>font-size 12</code>（模型按钮 <code>94 = 72 文字 + 11 + 11</code>，
+        「更多音量设置」6 个汉字正好 72px ⇒ 1 字 = 12px）。</li>
+      <li><b>底栏两态（同一个 Footer，靠可见性区分）</b><span class="tag sys">系统保留区</span><br>
+        系统页：我们<b>只在右侧加一个按钮</b>，别的一概不碰（本图不画系统页）；<br>
+        自定义页：<code>[清除重定向]</code> … <code>[设置]</code> … <code>[SystemMixer]</code> —— 左与中<b>只在自定义页出现</b>。<br>
+        四项<b>共用同一套样式</b>：不给自己人加颜色或边框 —— 注入实测就是"复制模型按钮的 <code>Style</code> 与 <code>Foreground</code>"，
+        外面完全看不出哪个是系统的、哪个是我们的。</li>
+      <li><b>底栏是「一个」元素</b><span class="tag">实现注意</span><br>
+        `Footer` 是系统页 PageWindow 的子元素，<b>不随内容区一起被换掉</b>。所以三个元素只在首次注入，之后靠
+        <b>可见性</b>（左、中）与<b>文字</b>（右）在切换的那一刻更新 —— 不是"两套底栏"。</li>
+    </ul>
+
+    <h2>录制模式（本次新增控件）</h2>
+    <ul>
+      <li><b>位置</b>：「默认输出设备」标题行<b>右对齐</b>，同一行。</li>
+      <li><b>勾选后的语义翻转</b><span class="tag">已定稿</span>（对应 <code>VirtualAudio-Record-Mirror-Plan.md</code>）：<br>
+        <b>勾选</b>：系统默认输出 → <b>V</b>（<code>OC Virtual Speaker</code>，硬锁 100%）；
+        <b>切之前的那台默认设备 → 监听设备 R</b>；本行标题 →「监听输出设备」。<br>
+        <b>取消勾选</b>：完全反向 —— 系统默认输出切回 <b>R</b>，本行标题 →「默认输出设备」。<br>
+        ⇒ 两边对称、无中间态。R <b>不是用户另外选的</b>，它就是从"切之前那台"来的。</li>
+      <li><b>V 永不显示</b><span class="tag">硬约束</span><br>
+        V <b>不出现在本页任何列表或标签里</b>，只能由这个复选框间接控制。<br>
+        ⇒ 枚举 render 端点时必须<b>过滤掉自己的虚拟端点</b>。否则用户能把它直接选成默认设备，
+        绕过录制模式、让录制链在"没有监听目标"的情况下空转。</li>
+      <li><b>录制模式不持久化</b><span class="tag">已定稿</span><br>
+        勾选状态<b>不跨系统重启保存</b>，每次启动一律从"未勾选"开始。⇒ <b>D 也不用落盘</b>，只活在本次会话内存里。</li>
+      <li><b>残留由驱动侧「常开开关」结构性解决</b><span class="tag">已定稿</span><br>
+        V 的插头就是个<b>常开开关</b>：驱动加载后默认<b>未插入</b>，只有我们显式闭合（录制模式打开时 IOCTL）才插入；
+        模式关 / 程序退出 / 崩溃被杀 → 驱动在 <code>IRP_MJ_CLEANUP</code> 上兜底回未插入。<br>
+        ⇒ 「程序没运行」是驱动的<b>上电默认值</b>，不需要任何代码维护 —— 崩溃、被杀、断电、重启全都一样。<br>
+        ⇒ 所以宿主侧<b>不需要</b>"待清理标记 + 上次默认设备"落盘与启动对账；D 只活在会话内存里。</li>
+      <li><b>当前状态可见</b>：勾选后下拉框的选中值<b>可能不变</b>（R 常常就是原来那台扬声器）。
+        所以只靠下拉框文字看不出模式已开 —— <b>复选框本身是唯一的状态指示</b>。若你觉得不够，可以在标题行再加一个状态词（不推荐，会挤）。</li>
+      <li><b>实现注意</b>：WinUI 的 <code>CheckBox</code> 默认 <code>MinHeight=32</code>、方框 <code>20px</code>，
+        会把这行 16px 的标题撑高到 32 —— 需要紧凑模板（<code>MinHeight=0</code> + <code>16px</code> 方框）。
+        <b>已验</b>：<code>CheckBox</code> 可激活、<code>IsChecked</code> 可往返、<code>MinHeight(0)</code> 可设、可挂树
+        （T18，见 <code>verified-after-injection/11-checkbox-capability.md</code>）。</li>
+    </ul>
+
+    <h2>设置页（本次新增）</h2>
+    <ul>
+      <li><b>入口与返回</b><br>
+        入口 = 自定义页底栏中位的「设置」。返回 = 设置页底栏 <b>中位的「返回」</b>（你定的）。<br>
+        ⚠️ <b>但标题行那个系统后退键仍然在</b> —— 它是 <code>PageWindow</code> 的元素，点它就是 L2Frame 往回导航
+        ⇒ <b>退回 L1</b>，跟底栏的「返回」不是一回事。<br>
+        <b>✅ 已定：保持系统默认行为，不拦</b> —— 两个返回键行为不同<b>是接受的取舍</b>，
+        ⛔ 不要再为此挂 <code>L2Frame.Navigating</code>（也就不必验 <code>NavigatingCancelEventArgs.Cancel</code> 可写性了）。</li>
+      <li><b>底栏三态：三个格子是"复用"的，不是"切换可见性"</b><span class="tag">实现注意</span><br>
+        <code>系统页&nbsp;&nbsp;&nbsp;[ — ]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;…&nbsp;[ — ]&nbsp;&nbsp;&nbsp;&nbsp;…&nbsp;[ MixerExtender ]</code><br>
+        <code>自定义页&nbsp;[ 清除重定向 ]&nbsp;…&nbsp;[ 设置 ]&nbsp;…&nbsp;[ SystemMixer ]</code><br>
+        <code>设置页&nbsp;&nbsp;&nbsp;[ GitHub ]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;…&nbsp;[ 返回 ]&nbsp;…&nbsp;[ （占位） ]</code><br>
+        ⇒ 三个格子<b>每页给不同文案 + 不同动作</b>，所以实现必须是"<b>每格一个 handler，进来先读当前页再分发</b>"。<br>
+        ⚠️ <b>不能"每到一页就新挂一个 Click"</b> —— 事件处理器会累积，切两次就会触发两次。<br>
+        ⚠️ 这与之前"靠可见性区分"的设想要分开：<b>可见性</b>只用来处理"系统页时左、中必须消失"（因为那几个格子
+        是我们塞进系统行的，系统页不该有我们的东西），<b>文案/动作</b>则一律靠 dispatch。</li>
+      <li><b>左侧 GitHub 只放短标签，不放完整地址</b><span class="tag">实测约束</span><br>
+        按底栏的排版实测算：<code>github.com/EricZhang233/VolumeMixerExtender</code>（43 字符）
+        在 <code>font-size:12</code> 下约 <b>258px 文字 + 22px 内边距 = 280px</b>；
+        而底栏可用宽度只有 <code>358 − 8 = 350px</code>，减去「返回」(46) 和右侧占位，<b>装不下</b>。<br>
+        ⇒ 所以图上用 <b>「GitHub」</b>，完整地址放 <code>title</code>（悬停可见）。<br>
+        ✅ 保持<b>中性灰</b>（已定，不破例）—— 因为底栏各项是"复制系统按钮的
+        <code>Foreground</code>"得来的，加蓝就破了统一。<b>它看起来不像链接是刻意的</b>：底栏三格是"三种动作"，不是"三个链接"。</li>
+      <li><b>打开 GitHub 用 <code>action=open</code></b><span class="tag">已定</span><br>
+        调 <code>ShellExecuteW(nullptr, L"open", url, nullptr, nullptr, SW_SHOWNORMAL)</code>，
+        <b>不复用 <code>exec</code></b>：<code>exec</code> 走 <code>CreateProcessW</code>，<b>只认 exe</b>；
+        "用默认浏览器打开 URL"是 shell 的职责。<br>
+        ⚠️ <code>ShellExecuteW</code> 的返回值<b>不是 BOOL</b> —— <code>&gt; 32</code> 才算成功。</li>
+      <li><b>右侧「（占位）」</b><br>
+        图上用半透明画出来，只是为了标明这一格已被预留。⚠️ <b>真实产品里这一格是空的</b>，不画任何东西。</li>
+      <li><b>「显示驱动名」</b><span class="tag">本次新增</span><br>
+        控制设备名要不要带括号里的驱动名后缀：<code>扬声器 (Realtek(R) Audio)</code> ↔ <code>扬声器</code>（默认开）。<br>
+        <b>作用面是三处</b>：① 两个下拉框的值；② 端点音量每一行；③ 应用行里"重定向目标端点"那行小字。
+        三者都来自 <code>PKEY_Device_FriendlyName</code>，必须同步改，不能只改一处。</li>
+      <li><b>⚠️ 它只能作用于设备名，绝不能碰应用名</b><span class="tag">线框稿踩到的 bug</span><br>
+        第一版按"去掉结尾括号"全局扫 <code>.nm</code>，结果把 <code>Microsoft Teams (工作或学校)</code>
+        削成了 <code>Microsoft Teams</code> —— 那是应用名的一部分，不是驱动名，削了就是另一个应用了。<br>
+        ⇒ 规则：<b>按"这个元素是不是设备名"来判定（要知道它属于哪个区块），
+        不要按"文本正则以 <code>(</code> 结尾"来判定。</b>
+        XAML 侧不存在"全局扫"的问题（每个 <code>TextBlock</code> 都是我们自己建的），
+        但<b>取值必须取对 Key</b>：设备名走 <code>PKEY_Device_FriendlyName</code>（或
+        <code>DeviceDesc</code> + <code>InterfaceFriendlyName</code> 自己拼），应用名走会话/进程信息。</li>
+      <li><b>⚠️ 它不省高度</b><span class="tag">实测</span><br>
+        开关前后内容高度 <b>603px → 603px（不变）</b>。行高由 <code>min-height:44</code> 钉死，名字短了行还是 44px。<br>
+        它省的是<b>折行/截断</b>：<code>显示器音频 (NVIDIA High Definition Audio)</code> 要折两行，
+        关掉后 <code>显示器音频</code> 一行就够。<b>所以这是可读性设置，不是省空间设置</b> ——
+        别指望它缓解上面那条"超出 297px"。</li>
+      <li><b>「开机启动」= <code>Run</code> 键 + <code>ToggleSwitch</code></b><span class="tag">新类型 · 已定</span><br>
+        ⚠️ <code>ToggleSwitch</code> <b>不在已验列表里</b>（T14 的 10 个类型、T18 的 <code>CheckBox</code> 都不含它）。
+        同在 <code>Windows.UI.Xaml.Controls</code> 下，预计可用，但按惯例要补一次探针。<br>
+        ✅ 开关背后是 <code>HKCU\...\CurrentVersion\Run</code> 的 <code>VolumeMixerExtender</code> 值：<br>
+        <code>"&lt;InstallRoot&gt;\vmex.exe" --tray</code>（⚠️ 路径带引号，整条是一根命令行字符串）；<br>
+        <b>登录时</b>由 explorer 拉起（⛔ 不是启动时 —— 要注入的 ShellHost 是每会话进程）；<br>
+        天然是当前用户<b>未提权</b>的令牌（注入要求同完整性级别）。<br>
+        开关语义：初值 = <b>Run 值存在 && 未被系统标记为禁用</b>；
+        <b>关 = 删 Run 值 + 删禁用标记</b>（⛔ 只删 Run 值会留下 <code>StartupApproved\Run</code> 灰项，
+        下次打开又被判成"被禁用"）。<br>
+        ℹ️ 同日从"计划任务"改过来：一个值就是全部语义，没有 <code>ExecutionTimeLimit</code> /
+        电池那几项默认值陷阱，也不存在把运行身份写成提权的可能。⚠️ 但控制台子系统仍会在登录时
+        <b>闪一下黑窗</b>（换 <code>Run</code> 键免不掉）—— <b>已决定接受</b>，不做子系统改造。</li>
+      <li><b>「从系统卸载」置底</b><span class="tag">危险操作</span><br>
+        用 <code>SystemFillColorCriticalBrush</code> 着色（深色主题 <code>#FF99A4</code>），
+        靠一个 <code>flex:1</code> 的空白块把它推到内容区底部 —— 它<b>不属于底栏</b>，仍在内容区里（会随内容滚动）。<br>
+        <b>连击确认</b>：单击后文案变 <code>再单击{N}次从系统卸载</code>，<b>相邻两次间隔须 ≤ 0.5s</b>，
+        超时立刻复位；<b>连击 5 次</b>才真卸。<br>
+        选连击而不是 <code>ContentDialog</code>：浮层会盖住面板、还得先验 <code>XamlRoot</code>。<br>
+        ⭐ <b>语义 = "退出接管、回落原生行为"，不是"删掉这个软件"</b>：
+        <b>不删程序文件、不卸驱动、不删配置</b>，只做两件事 ——
+        <b>① 删除开机自启项 ② 重启 shell</b>（ShellHost 换进程 ⇒ TAP 连同注入一起消失 ⇒ 原生 UI 回来）。<br>
+        ⛔ 这两步<b>必须由 App 执行，不能由 TAP 执行</b>：TAP 就活在 ShellHost 里，重启 shell = 它当场自杀；
+        而且只有 App 能在杀 ShellHost <b>之前</b>先把 Watcher 停掉，否则 TAP 会被立刻重新注入回来。<br>
+        ⇒ 走 <code>action=pipe</code> 通知 App；<b>pipe 不可用就拒绝执行</b>（绝不降级成"TAP 自己重启 shell"）。<br>
+        ℹ️ 顺手把「程序文件还在 ⇒ 手动运行一次 exe 即可重新接管」这条也带出来：
+        所以 App 启动时要写 <code>enabled=1</code>，覆盖卸载时留下的 <code>0</code>。</li>
+      <li><b>这页就是"零散小设置项"的收容所</b><br>
+        目前只有「开机启动」「显示驱动名」两项，下面留空 —— 不占位造假的条目。后续小设置项都往「常规」下面加。</li>
+    </ul>
+
+    <h2>已定稿</h2>
+    <ul>
+      <li><b>下拉框的标签带「默认」</b><br>写「默认输出设备」/「默认输入设备」—— 直接说清这个下拉框改的是<b>系统默认设备</b>，不靠额外标记。</li>
+      <li><b>应用列表不分组</b><br>平铺一条列表，不按端点分组。</li>
+      <li><b>下拉框与列表共用一个滚动区</b><br>整块内容一起滚 —— 实现最简单，也不需要在窄侧栏里做嵌套滚动。</li>
+    </ul>
+  </div>
+</div>
+
+<div class="hint">
+  系统页<b>不在本图范围内，我们也不绘制</b>：我们对它的全部改动就是<b>底栏右侧多一个按钮</b>。<br>
+  系统页本身由系统自己绘制 —— 我们只在它构建好之后把内容区 <code>ListContent.Content</code> 换出、保存引用，
+  切回时把<b>同一个对象</b>放回去。所以产物里没有、也不需要"系统页"这部分代码。<br>
+  上面这块内容对应的正是 <code>ListContent</code> 的区域；标题行与底栏是系统的，我们不改。
+</div>
+
+<script>
+  const rec = document.getElementById('recMode');
+  const outLabel = document.getElementById('outLabel');
+  rec.addEventListener('change', () => {
+    outLabel.textContent = rec.checked ? '监听输出设备' : '默认输出设备';
+  });
+
+  const inGroup = document.getElementById('inGroup');
+  const inGroupBody = document.getElementById('inGroupBody');
+  inGroup.addEventListener('click', () => {
+    const open = inGroup.getAttribute('aria-expanded') === 'true';
+    inGroup.setAttribute('aria-expanded', String(!open));
+    inGroupBody.hidden = open;
+  });
+
+  // 「显示驱动名」：控制设备名要不要带括号里的驱动名后缀。
+  // ⚠️ 只作用于**设备名**这三处：下拉框的值 / 端点音量行 / 应用行的"重定向目标端点"。
+  //    ⛔ 绝不能扫应用名 —— 应用名里也会有括号（例如 `Microsoft Teams (工作或学校)`），
+  //    按"去掉结尾括号"做会把应用名削掉一截。
+  const showDriver = document.getElementById('showDriver');
+  const devNames = [...document.querySelectorAll('#pCustom .combo .name, #pCustom .list.dev .nm, #pCustom .route')]
+    .filter(e => /\(.*\)\s*$/.test(e.textContent.trim()));
+  for (const e of devNames) e.dataset.full = e.textContent.trim();
+  const applyNames = () => {
+    for (const e of devNames) {
+      e.textContent = showDriver.checked ? e.dataset.full : e.dataset.full.replace(/\s*\(.*\)\s*$/, '');
+    }
+  };
+  showDriver.addEventListener('change', applyNames);
+
+  // 「从系统卸载」：连击确认（不用 ContentDialog —— 浮层会盖住面板，且要多验一个 XamlRoot）。
+  //   ① 每 2 次单击间隔必须 ≤ 500ms，超时立刻复位回「从系统卸载」
+  //   ② 连续 5 次后确认卸载
+  //   ③ 单击后文案变「再单击{N}次从系统卸载」，N = 还差几次
+  const uninstall = document.getElementById('uninstall');
+  const UNINSTALL_TOTAL = 5, UNINSTALL_GAP_MS = 500;
+  let uninstallHits = 0, uninstallTimer = 0;
+  const uninstallReset = () => {
+    uninstallHits = 0;
+    uninstall.textContent = '从系统卸载';
+    uninstall.classList.remove('arm');
+  };
+  uninstall.addEventListener('click', () => {
+    if (uninstall.classList.contains('done')) return;
+    clearTimeout(uninstallTimer);
+    uninstallHits++;
+    if (uninstallHits >= UNINSTALL_TOTAL) {
+      uninstall.textContent = '已确认卸载';
+      uninstall.title = '（线框稿演示态）';
+      uninstall.classList.remove('arm');
+      uninstall.classList.add('done');
+      return;
+    }
+    uninstall.textContent = `再单击${UNINSTALL_TOTAL - uninstallHits}次从系统卸载`;
+    uninstall.classList.add('arm');
+    uninstallTimer = setTimeout(uninstallReset, UNINSTALL_GAP_MS);
+  });
+</script>
+</body>
+</html>

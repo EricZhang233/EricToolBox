@@ -1,0 +1,9 @@
+[02:00:21.593 tid=5952] ================================================================
+[02:00:21.593 tid=5952] vcxlaunch attached: pid=8420 tid=5952 CoInitializeEx=0x00000000
+[02:00:21.593 tid=5952] Windows.UI.Xaml.dll = 00007FFE421D0000
+[02:00:21.593 tid=5952] InitializeXamlDiagnosticsEx = 00007FFE42907C30
+[02:00:21.593 tid=5952] xamldiagnostics.dll = C:\Program Files (x86)\Windows Kits\10\bin\x64\XamlDiagnostics\xamldiagnostics.dll  (exists=1)
+[02:00:21.593 tid=5952] TAP dll             = C:\Users\eric\Desktop\Projects\VolumeMixerExtender\.research\poc\vcxtap.dll  (exists=1)
+[02:00:21.593 tid=5952] ---- walking endpoint names VisualDiagConnection1..N ----
+[02:00:21.598 tid=5952] SUCCESS: endpoint=VisualDiagConnection1  hr=0x00000000  (index 1)
+[02:00:21.598 tid=5952] the TAP should now be loaded; watch vcxtap.log

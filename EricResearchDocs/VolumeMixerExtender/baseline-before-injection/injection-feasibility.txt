@@ -1,0 +1,26 @@
+=== 1. integrity level ===
+  this process (pid 14320) : Medium (RID 0x2000)
+  ShellHost  (pid 3704) : Medium (RID 0x2000)
+  explorer   (pid 4872) : Medium (RID 0x2000)
+
+=== 2. protection (PPL?) ===
+  ShellHost : None audit=0 signer=0
+  explorer  : None audit=0 signer=0
+
+=== 3. OpenProcess access test (what an injector needs) ===
+  injection rights (0x00043A) : GRANTED (handle=0x6CC)
+  ALL_ACCESS (0x1FFFFF) : GRANTED (handle=0x6CC)
+
+=== 4. is XamlDiagnostics.dll available from any Windows SDK on this machine? ===
+  NOT FOUND (no Windows SDK with the XAML diagnostics tap DLL)
+
+=== 5. ControlCenter.dll (the Quick Settings implementation) exports ===
+
+file    : C:\Windows\System32\ControlCenter.dll
+version :   ()
+exports : 3
+filter  : .
+
+  ControlCenterMain
+  DllCanUnloadNow
+  DllGetActivationFactory
