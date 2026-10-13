@@ -1,9 +1,9 @@
-# build.ps1 — compile AirPlayBridge.exe with the in-box .NET Framework compiler.
+# build-dotnet-framework-csharp.ps1 — compile with the .NET Framework C# compiler.
 # No .NET SDK required: WinRT comes from the OS winmd metadata, so the result is a single
 # native Win32 exe (GUI subsystem => no console window) that runs on any Windows 10/11.
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$src = Join-Path $root 'src\AirPlayBridge.cs'
+$src = Join-Path $root 'AirPlayBridge.cs'
 $ico = Join-Path $root 'airplay.ico'
 $out = Join-Path $root 'AirPlaySmtcBridge.exe'
 
@@ -24,7 +24,7 @@ $cscArgs = @(
     "/out:$out"
 )
 if (Test-Path -LiteralPath $ico) { $cscArgs += "/win32icon:$ico" }   # embedded app/taskbar icon
-$man = Join-Path $root 'src\app.manifest'
+$man = Join-Path $root 'app.manifest'
 if (Test-Path -LiteralPath $man) { $cscArgs += "/win32manifest:$man" }  # supportedOS + dpiAware + asInvoker
 $cscArgs += @(
     "/r:$wm\Windows.Media.winmd"

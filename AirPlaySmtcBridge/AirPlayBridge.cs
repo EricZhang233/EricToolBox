@@ -25,10 +25,10 @@ using Windows.Storage.Streams;
 // "unknown app"). In an SDK-style project these come from the project file instead, so they are
 // compiled only for the classic csc build to avoid duplicate-attribute errors.
 #if NETFRAMEWORK
-[assembly: System.Reflection.AssemblyTitle("AirPlay")]
-[assembly: System.Reflection.AssemblyProduct("AirPlay")]
+[assembly: System.Reflection.AssemblyTitle("AirPlaySmtcBridge.eric.app")]
+[assembly: System.Reflection.AssemblyProduct("AirPlaySmtcBridge.eric.app")]
 [assembly: System.Reflection.AssemblyCompany("eric")]
-[assembly: System.Reflection.AssemblyDescription("AirPlay -> Windows SMTC bridge")]
+[assembly: System.Reflection.AssemblyDescription("AirPlaySmtcBridge.eric.app")]
 [assembly: System.Reflection.AssemblyCopyright("eric")]
 [assembly: System.Reflection.AssemblyFileVersion("1.0.0.0")]
 [assembly: System.Reflection.AssemblyVersion("1.0.0.0")]
@@ -111,9 +111,7 @@ public static class Program
     const string ShortcutName = "AirPlaySmtcBridge"; // Start Menu shortcut file name
     const int PollMs = 150;
     const int DisconnectSec = 5;
-    const int AudioSilenceSec = 3;      // liveness freshness window
     const int DriftGuardSec = 12;
-    const double AudioRatePlaying = 5.0;
 
     public static bool NoControl, NoTimeline, Verbose;
     public static int DisconnectSecCfg = DisconnectSec;
@@ -123,7 +121,7 @@ public static class Program
     static readonly string[] LegacyAumids = { "Clawrin.AirPlayBridge", "eric.AirPlayBridge.app" };
     static EventWaitHandle stopEvent;
 
-    static readonly string Work = Path.Combine(Path.GetTempPath(), "AirPlayBridge");
+    static readonly string Work = Path.Combine(Path.GetTempPath(), "eric", "AirPlayBridge");
     static readonly string ArtFile = Path.Combine(Work, "artwork.jpg");
     static readonly string LogFile = Path.Combine(Work, "AirPlayBridge.log");
 
@@ -229,7 +227,7 @@ public static class Program
         public string Published = "", Song = "", Artist = "", Album = "";
         public double Start, End;
         public DateTime NewTrackUntil; public bool HasNewTrackWindow;
-        public bool HasData, AudioOn; public int AudioStreak;
+        public bool HasData, AudioOn;
         public bool SawAudio;
         public bool LoggedWaiting;
         public string Status = "Paused";
@@ -828,12 +826,9 @@ public static class Program
         static SystemMediaTransportControlsDisplayUpdater upd;
         static System.Threading.Timer keyTimer;
         static TypedEventHandler<SystemMediaTransportControls, SystemMediaTransportControlsButtonPressedEventArgs> btnHandler;
-        static TypedEventHandler<SystemMediaTransportControls, PlaybackPositionChangeRequestedEventArgs> seekHandler;
         static readonly bool[] keyDown = new bool[8];
         static readonly int[] keys = { 0xB3, 0xB0, 0xB1, 0xB2 };   // play/pause, next, prev, stop
         static readonly string[] keyCmd = { "playpause", "nextitem", "previtem", "stop" };
-        public static volatile bool SeekRequested = false;
-        public static double SeekRequestedTo = 0;
         public static string LastHookLog = "";
 
         public static void Start()
@@ -861,16 +856,13 @@ public static class Program
             // C# refuses explicit event-accessor calls on the winmd projection (CS0571): use reflection.
             // The delegates are kept in static fields so the GC cannot collect them.
             btnHandler = new TypedEventHandler<SystemMediaTransportControls, SystemMediaTransportControlsButtonPressedEventArgs>(OnButton);
-            seekHandler = new TypedEventHandler<SystemMediaTransportControls, PlaybackPositionChangeRequestedEventArgs>(OnSeek);
             try
             {
                 typeof(SystemMediaTransportControls).GetMethod("add_ButtonPressed").Invoke(smtc, new object[] { btnHandler });
-                typeof(SystemMediaTransportControls).GetMethod("add_PlaybackPositionChangeRequested").Invoke(smtc, new object[] { seekHandler });
             }
             catch (Exception ex) { Log("control hook failed: " + ex.Message); }
 #else
             smtc.ButtonPressed += OnButton;                                  // CsWinRT projection
-            smtc.PlaybackPositionChangeRequested += OnSeek;
 #endif
             Active = true;
             if (Dacp.Enabled)
@@ -884,7 +876,7 @@ public static class Program
         {
             if (!Active) return;
             if (keyTimer != null) { keyTimer.Dispose(); keyTimer = null; }
-            try { smtc.ButtonPressed -= OnButton; smtc.PlaybackPositionChangeRequested -= OnSeek; } catch { }
+            try { smtc.ButtonPressed -= OnButton; } catch { }
             try { smtc.IsEnabled = false; } catch { }
             try { DestroyWindow(hwnd); } catch { }
             Active = false; smtc = null; upd = null; hwnd = IntPtr.Zero;
@@ -907,12 +899,6 @@ public static class Program
                 default: cmd = null; break;
             }
             Dacp.Send(cmd, "smtc");
-        }
-
-        static void OnSeek(SystemMediaTransportControls s, PlaybackPositionChangeRequestedEventArgs e)
-        {
-            SeekRequestedTo = e.RequestedPlaybackPosition.TotalSeconds;
-            SeekRequested = true;
         }
 
         static void KeyTick(object o)
@@ -980,8 +966,11 @@ public static class Program
                 tl.StartTime = TimeSpan.Zero;
                 tl.EndTime = TimeSpan.FromSeconds(dur);
                 tl.Position = TimeSpan.FromSeconds(pos);
-                tl.MinSeekTime = TimeSpan.Zero;   // declare "position is read-only" (iOS has no seek)
-                tl.MaxSeekTime = TimeSpan.Zero;
+                // Publish a zero-width seek range at the current position. Start/End/Position
+                // remain populated so the timeline is visible, while consumers see no seek span.
+                var current = TimeSpan.FromSeconds(pos);
+                tl.MinSeekTime = current;
+                tl.MaxSeekTime = current;
                 smtc.UpdateTimelineProperties(tl);
             }
             catch (Exception ex) { Log("timeline failed: " + ex.Message); }
@@ -1501,20 +1490,6 @@ public static class Program
             var d = Dacp.Resolve(4000);
             if (!string.IsNullOrEmpty(d)) Log("DACP endpoint (retry): '" + d + "'");
         }
-        if (Smtc.SeekRequested)
-        {
-            double asked = Smtc.SeekRequestedTo;
-            Smtc.SeekRequested = false;
-            if (St.Dur > 0)
-            {
-                double truePos = St.Pos;
-                if (St.HasProgress && St.Status == "Playing") truePos = St.Pos + (now - St.LastProgress).TotalSeconds;
-                Smtc.SetTimeline(truePos, St.Dur);
-                Log(string.Format("seek not supported: asked {0:n1}s -> snapped back to the true position {1:n1}s", asked, truePos));
-            }
-            else Log(string.Format("seek not supported: asked {0:n1}s (no timeline published yet)", asked));
-        }
-
         // ---- stats
         if ((now - LastStat).TotalSeconds >= 30)
         {
@@ -1533,8 +1508,9 @@ public static class Program
             double dt = (now - LastAudioT).TotalSeconds;
             if (dt >= 0.25) { LastAudioRate = (at - LastAudioN) / dt; LastAudioN = at; LastAudioT = now; }
         }
-        if (LastAudioRate > AudioRatePlaying) St.AudioStreak++; else St.AudioStreak = 0;
-        St.AudioOn = St.AudioStreak >= 2;
+        // Playback state follows only the large audio packets. RTCP/timing packets are
+        // intentionally excluded in Sniffer.HandleL4 (payload >= 500 bytes).
+        St.AudioOn = LastAudioRate > 0;
         // Deliberately NOT "St.HasData = true" here: audio flowing alone must not register the
         // session. The card appears only once the iPhone reports real song data (metadata or a
         // progress/timeline anchor), which is what the user asked for.
@@ -1544,23 +1520,16 @@ public static class Program
             Log("audio is flowing but no song data yet -> SMTC stays unregistered until the iPhone reports");
         }
 
-        // ---- playback state: liveness = newest of progress / metadata / track anchor
+        // ---- playback state: only observed large audio packets indicate Playing.
         if (St.HasData || St.AudioOn)
         {
-            double sigAge = 9999;
-            foreach (var ts in new[] { St.LastProgress, St.LastMetaAt, St.LastAnchorAt })
-            {
-                if (ts == DateTime.MinValue) continue;
-                double age = (now - ts).TotalSeconds;
-                if (age < sigAge) sigAge = age;
-            }
-            string want = (sigAge <= AudioSilenceSec || St.AudioOn) ? "Playing" : "Paused";
+            string want = St.AudioOn ? "Playing" : "Paused";
             if (want != St.Status)
             {
                 St.Status = want;
                 Smtc.SetStatus(want);
-                Log(string.Format("state -> {0}  (liveness {1}; local audio {2:n0} pkt/s; pos {3:n1}/{4:n1})",
-                    want, sigAge < 9000 ? string.Format("{0:n1}s ago", sigAge) : "none yet", LastAudioRate, St.Pos, St.Dur));
+                Log(string.Format("state -> {0}  (large audio packets {1:n0}/s; pos {2:n1}/{3:n1})",
+                    want, LastAudioRate, St.Pos, St.Dur));
             }
         }
 
@@ -1591,7 +1560,7 @@ public static class Program
             Smtc.Stop();
             St.Published = ""; St.Song = ""; St.Artist = ""; St.Album = "";
             St.Pos = 0; St.Dur = 0; St.HasProgress = false; St.Start = 0; St.End = 0;
-            St.HasData = false; St.AudioOn = false; St.AudioStreak = 0; St.SawAudio = false; St.LoggedWaiting = false;
+            St.HasData = false; St.AudioOn = false; St.SawAudio = false; St.LoggedWaiting = false;
             St.Status = "Paused"; St.TokenSeen = false; St.HasHeartbeat = false; St.HasSessionGone = false;
             St.LastProgress = DateTime.MinValue; St.LastMetaAt = DateTime.MinValue; St.LastAnchorAt = DateTime.MinValue;
         }
