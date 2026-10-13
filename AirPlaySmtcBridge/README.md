@@ -1,6 +1,6 @@
 # AirPlaySmtcBridge
 
-AirPlaySmtcBridge 是一个 Windows 后台桥接程序：它被动读取本机网络适配器上的 AirPlay/RAOP 流量，并把歌曲信息、封面、播放状态和播放进度发布到 Windows 的系统媒体传输控件（SMTC）。程序本身不播放或转发音频。
+AirPlaySmtcBridge 是一个 Windows 后台桥接程序：它被动读取本机网络适配器上的 AirPlay/RAOP 流量，并把歌曲信息、封面、播放状态和播放进度发布到 Windows 的系统媒体传输控件（SMTC）。程序本身不接收、播放或转发音频。**本机必须另有 AirPlay 接收软件正在运行并接收 AirPlay 流**；如果没有这样的接收软件，或当前没有活动的 AirPlay 接收会话，本程序就没有可抓取的 AirPlay 流量，媒体信息和控制功能也不会生效。
 
 ## 功能
 
@@ -15,6 +15,7 @@ AirPlaySmtcBridge 是一个 Windows 后台桥接程序：它被动读取本机�
 
 - Windows 10 或 Windows 11（x64）。
 - 本机无线网卡和 Npcap 抓包驱动。程序通过 Npcap 的 `Packet.dll` 被动读取网络帧。
+- 本机需要另行安装并运行一个 AirPlay 接收客户端，由该客户端接收发送设备推送的 AirPlay 流。本程序只抓取本机网络适配器上的流量，不提供 AirPlay 接收服务；没有活动的接收客户端会话时，项目无法获取 AirPlay 数据。
 - 首次运行如未检测到 Npcap，程序会提示并尝试从 Npcap 官网下载官方安装程序；安装需要在 Windows UAC 提示中由用户确认。程序自身不提权。
 - AirPlay 发送设备与运行桥接程序的电脑应处于可互相通信的网络中。
 

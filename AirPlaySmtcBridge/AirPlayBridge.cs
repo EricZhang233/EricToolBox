@@ -601,9 +601,8 @@ public static class Program
         public static volatile string Token = "";
         public static volatile string Host = "";
         public static volatile int Port = 0;
-        public static int Sent, RateLimited, SmtcEvents, KbEvents;
+        public static int Sent, SmtcEvents, KbEvents;
         public static string LastLog = "";
-        static DateTime lastSend = DateTime.MinValue;
         static readonly object SendLock = new object();
 
         public static string Send(string cmd, string src)
@@ -622,9 +621,6 @@ public static class Program
             { LastLog = Stamp() + " [" + src + "] " + cmd + " skipped (no Active-Remote/host yet)"; return ""; }
             lock (SendLock)
             {
-                if ((DateTime.UtcNow - lastSend).TotalMilliseconds < 800)
-                { RateLimited++; LastLog = Stamp() + " " + cmd + " rate-limited (dedupe)"; return ""; }
-                lastSend = DateTime.UtcNow;
                 try
                 {
                     IPAddress addr;
@@ -655,6 +651,17 @@ public static class Program
             }
         }
         static string Stamp() { return DateTime.Now.ToString("HH:mm:ss"); }
+
+        /// <summary>Use the peer of the current RTSP control session, not a cached mDNS address.</summary>
+        public static void UpdatePeerFromRtsp()
+        {
+            if (Port == 0 || SnifferRef == null) return;
+            string peer = SnifferRef.PeerV4;
+            if (string.IsNullOrEmpty(peer)) peer = Scopeify(SnifferRef.PeerV6);
+            if (string.IsNullOrEmpty(peer) || peer == Host) return;
+            Host = peer;
+            Log("DACP target updated from active RTSP peer: " + Host + ":" + Port);
+        }
 
         // ---- mDNS: multicast query, then unicast to candidates we already know
         public static string Resolve(int timeoutMs)
@@ -1454,6 +1461,7 @@ public static class Program
                     if (p.Length > 2 && p[2].Length > 0)
                     {
                         Dacp.Token = p[2];
+                        Dacp.UpdatePeerFromRtsp();
                         if (!St.TokenSeen) { St.TokenSeen = true; Log("Active-Remote token acquired from the live RTSP stream: " + p[2]); }
                     }
                     break;
@@ -1494,9 +1502,9 @@ public static class Program
         if ((now - LastStat).TotalSeconds >= 30)
         {
             LastStat = now;
-            Log(string.Format("stats: frames={0} tcp7000={1} audio={2:n0}/s title='{3}' status={4} pos={5:n1}/{6:n1} smtc={7} ctl[smtc={8} sent={9} rl={10} kb={11}]",
+            Log(string.Format("stats: frames={0} tcp7000={1} audio={2:n0}/s title='{3}' status={4} pos={5:n1}/{6:n1} smtc={7} ctl[smtc={8} sent={9} kb={10}]",
                 SnifferRef.Frames, SnifferRef.Pkts7000, LastAudioRate, St.Published, St.Status, St.Pos, St.Dur, Smtc.Active,
-                Dacp.SmtcEvents, Dacp.Sent, Dacp.RateLimited, Dacp.KbEvents));
+                Dacp.SmtcEvents, Dacp.Sent, Dacp.KbEvents));
         }
 
         // ---- audio rate (large UDP packets) -> liveness fallback / "is the stream alive"
