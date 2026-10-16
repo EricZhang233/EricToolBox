@@ -1,0 +1,61 @@
+// ============================================================================
+//  GpuMonitor.rc —— 配置对话框模板
+//
+//  注意：本文件刻意只使用 ASCII 文本，所有中文界面文字都在 GpuMonitor.cpp 里
+//  用 SetDlgItemTextW 设置（源码以 /utf-8 编译，不会乱码）。
+//  这样就不依赖 rc.exe 的代码页设置。
+//
+//  ── 版面（单位：DLU；本模板基准字体 = Microsoft YaHei UI 9pt）─────────────
+//    对话框 360 x 344，左右外边距各 10，各分组框统一 x=10 / width=340，
+//    组内控件统一内缩 10（x=20），组框标题与首个控件之间留 17 的标题带。
+//    底部按钮固定右下角：OK/Cancel 各 54 宽、右外边距 10、间距 8。
+//    这样在任何一组文字换行/字体回退时都不会压到边框或彼此重叠。
+//
+//  ── 为什么不用 DS_FIXEDSYS ────────────────────────────────────────────────
+//    它会把字体退回系统定宽字体，和 FONT 行声明的 YaHei 度量不一致，
+//    在高 DPI 下正是"控件超界"的来源，所以这里不要它。
+// ============================================================================
+//  winres.h = SDK 里专供资源脚本用的头文件（WS_*/DS_*/BS_* 等）
+#include <winres.h>
+#include "resource.h"
+
+// ListView 用到的几个 LVS_* 常量：直接给出数值，避免 rc.exe 去解析 commctrl.h
+#ifndef LVS_REPORT
+#define LVS_REPORT          0x0001
+#define LVS_SINGLESEL       0x0004
+#define LVS_SHOWSELALWAYS   0x0008
+#define LVS_NOSORTHEADER    0x8000
+#endif
+
+IDD_VRAM_OPTIONS DIALOGEX 0, 0, 360, 362
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "GPU Monitor"
+FONT 9, "Microsoft YaHei UI", 400, 0, 134
+BEGIN
+    // ---- 要监控的显卡（组框 10,10-340x150）----
+    GROUPBOX        "",                     IDC_GRP_ADAPTER,        10,  10, 340, 150
+    CONTROL         "",                     IDC_LIST_ADAPTER,       "SysListView32", LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_NOSORTHEADER | WS_BORDER | WS_TABSTOP, 20, 27, 320, 108
+    PUSHBUTTON      "Refresh",              IDC_BTN_REFRESH,        20, 138,  72,  15
+    LTEXT           "",                     IDC_STATIC_HINT,       102, 140, 240,  10
+
+    // ---- 显存显示内容（组框 10,170-340x48）----
+    GROUPBOX        "",                     IDC_GRP_USED,           10, 170, 340,  48
+    CONTROL         "Used",                 IDC_RADIO_USED_MB,      "Button", BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP, 24, 188,  62,  10
+    CONTROL         "Percent",              IDC_RADIO_USED_PCT,     "Button", BS_AUTORADIOBUTTON,                    96, 188,  62,  10
+    CONTROL         "Used + Percent",       IDC_RADIO_USED_BOTH,    "Button", BS_AUTORADIOBUTTON,                   168, 188, 120,  10
+
+    // ---- 显示单位（组框 10,228-340x48）----
+    GROUPBOX        "",                     IDC_GRP_UNIT,           10, 228, 340,  48
+    CONTROL         "Auto",                 IDC_RADIO_UNIT_AUTO,    "Button", BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP, 24, 246,  62,  10
+    CONTROL         "MB",                   IDC_RADIO_UNIT_MB,      "Button", BS_AUTORADIOBUTTON,                    96, 246,  62,  10
+    CONTROL         "GB",                   IDC_RADIO_UNIT_GB,      "Button", BS_AUTORADIOBUTTON,                   168, 246,  62,  10
+
+    // ---- 其它 + 两行说明（每行独立控件，避免长句被裁掉右端）----
+    CONTROL         "Show GPU name in tooltip", IDC_CHECK_TOOLTIP_NAME, "Button", BS_AUTOCHECKBOX | WS_TABSTOP,      20, 292, 320,  10
+    LTEXT           "",                     IDC_STATIC_HINT2,       20, 314, 330,  10
+    LTEXT           "",                     IDC_STATIC_HINT3,       20, 328, 330,  10
+
+    // ---- 按钮（右下角；与上一行说明保持 7 的间距，底部也留 7）----
+    DEFPUSHBUTTON   "OK",                   IDOK,                  236, 338,  54,  15
+    PUSHBUTTON      "Cancel",               IDCANCEL,              296, 338,  54,  15
+END

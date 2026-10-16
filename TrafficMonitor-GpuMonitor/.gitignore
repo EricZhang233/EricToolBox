@@ -1,0 +1,61 @@
+# ============================================================================
+#  .gitignore —— 只跟踪源码，忽略所有构建产物
+# ============================================================================
+
+# CMake / Visual Studio 构建目录（cmake -B build）
+build/
+out/
+cmake-build-*/
+build-*/
+
+# CMake 生成物（万一在源码目录里就地配置）
+CMakeCache.txt
+CMakeFiles/
+CMakeUserPresets.json
+cmake_install.cmake
+CTestTestfile.cmake
+*.cmake.stamp
+
+# Visual Studio / MSBuild
+.vs/
+*.sln
+*.slnx
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.props
+*.targets
+Debug/
+Release/
+x64/
+ARM64/
+*.tlog
+*.log
+*.recipe
+*.lastbuildstate
+*.idb
+*.pdb
+*.ilk
+*.exp
+*.iobj
+*.ipdb
+
+# 编译产物
+*.obj
+*.o
+*.res
+*.lib
+*.dll
+*.exe
+
+# 编辑器 / 工具
+.vscode/
+.idea/
+*.swp
+*~
+Thumbs.db
+desktop.ini
+
+# 插件运行时落盘的东西（如果测试时生成在源码目录）
+GpuMonitor.ini
+GpuMonitor.log
