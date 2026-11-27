@@ -24,7 +24,7 @@ param(
     [string]$LogFile = 'auto'
 )
 
-$ScriptVersion = '4.3.0'
+$ScriptVersion = '4.3.1'
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
@@ -2790,30 +2790,37 @@ function Invoke-AudioMigration {
         throw "The primary audio device is not ready. OEM packages have been retained."
     }
 
-    # Only remove the OEM extensions after the physical card has switched to the inbox driver.
-    foreach ($package in $liveExtensions) {
-        $item = Get-PlannedPackage $package
-        if (-not $item) { continue }
-        if ((Get-CurrentInf $instance) -ne $GenericInf -or @($item.Devices | Where-Object { $_ -ne $instance }).Count) {
-            throw 'The audio driver or package bindings changed during migration.'
-        }
-        Remove-PlannedPackage $item -Uninstall:($item.Devices.Count -gt 0)
-    }
-    Assert-GenericAudio $instance
-
-    # Keep only the confirmed device association for discovery after removal.
-    # Windows Update blocks are still applied to an update ID and revision.
+    # Keep the verified card association even after all matching vendor packages are removed.
     $statePath = 'HKLM:\SOFTWARE\EricSoft\FuckNahimic'
     $null = New-Item -Path $statePath -Force
     $null = New-ItemProperty -LiteralPath $statePath -Name AudioInstance -PropertyType String -Value $instance -Force
 
+    # Removing an installed extension can restart PnP driver selection. Remove
+    # the backed-up, unbound OEM base candidates first so they cannot win again.
     foreach ($package in $liveBase) {
         $item = Get-PlannedPackage $package
         if (-not $item) { continue }
-        if ((Get-CurrentInf $instance) -ne $GenericInf -or $item.Devices.Count) {
+        $activeInf = Get-CurrentInf $instance
+        if ($activeInf -ne $GenericInf) {
+            throw "Before removing $($item.Name), the primary card reports '$activeInf'; expected $GenericInf."
+        }
+        if ($item.Devices.Count) {
             throw "The OEM base package $($item.Name) is still bound to a device. It was kept."
         }
         Remove-PlannedPackage $item -VerifiedOemBase
+    }
+
+    foreach ($package in $liveExtensions) {
+        $item = Get-PlannedPackage $package
+        if (-not $item) { continue }
+        $activeInf = Get-CurrentInf $instance
+        if ($activeInf -ne $GenericInf) {
+            throw "Before removing extension $($item.Name), the primary card reports '$activeInf'; expected $GenericInf."
+        }
+        if (@($item.Devices | Where-Object { $_ -ne $instance }).Count) {
+            throw "Extension $($item.Name) was rebound to another device. It was kept."
+        }
+        Remove-PlannedPackage $item -Uninstall:($item.Devices.Count -gt 0)
     }
 
     Assert-GenericAudio $instance
