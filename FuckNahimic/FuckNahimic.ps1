@@ -21,19 +21,35 @@ param(
     [switch]$InstallGuard,
     [switch]$RemoveGuard,
     [switch]$SkipGuard,
+    [switch]$NoPause,
     [string]$LogFile = 'auto'
 )
 
-$ScriptVersion = '4.3.1'
+$ScriptVersion = '4.3.4'
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+function Wait-ForUserToReview {
+    if ($NoPause -or $Host.Name -ne 'ConsoleHost') { return }
+    try {
+        if ([Console]::IsInputRedirected) { return }
+        [void](Read-Host '运行已结束。按 Enter 关闭此窗口')
+    } catch { }
+}
+
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
     Write-Error 'This script requires Windows.' -ErrorAction Continue
+    Wait-ForUserToReview
     exit 2
 }
 if ($LogFile -ne 'auto') {
-    $LogFile = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($LogFile)
+    try {
+        $LogFile = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($LogFile)
+    } catch {
+        Write-Error "Invalid log path: $_" -ErrorAction Continue
+        Wait-ForUserToReview
+        exit 2
+    }
 }
 
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
@@ -54,22 +70,29 @@ if ($PSVersionTable.PSVersion.Major -lt 7 -or -not $isAdmin) {
         if ($RemoveGuard) { $arguments += '-RemoveGuard' }
         if ($SkipGuard) { $arguments += '-SkipGuard' }
         if ($LogFile -ne 'auto') { $arguments += @('-LogFile', $LogFile) }
+        if ($NoPause) { $arguments += '-NoPause' }
         if ($isAdmin) {
             & $pwsh @arguments
-            exit $LASTEXITCODE
+            $childExitCode = $LASTEXITCODE
+            exit $childExitCode
         }
         $arguments[5] = '"{0}"' -f $PSCommandPath
-        if ($LogFile -ne 'auto') { $arguments[$arguments.Count - 1] = '"{0}"' -f $LogFile }
+        if ($LogFile -ne 'auto') {
+            $logFileIndex = [Array]::IndexOf($arguments, '-LogFile') + 1
+            $arguments[$logFileIndex] = '"{0}"' -f $LogFile
+        }
         $child = Start-Process -FilePath $pwsh -Verb RunAs -ArgumentList $arguments -Wait -PassThru
         exit $child.ExitCode
     } catch {
         Write-Error "Could not start elevated PowerShell 7: $_" -ErrorAction Continue
+        Wait-ForUserToReview
         exit 2
     }
 }
 
 if ([Environment]::Is64BitOperatingSystem -and -not [Environment]::Is64BitProcess) {
     Write-Error 'Run the 64-bit version of PowerShell 7.' -ErrorAction Continue
+    Wait-ForUserToReview
     exit 2
 }
 $PSNativeCommandUseErrorActionPreference = $false
@@ -1286,7 +1309,7 @@ function Test-GuardApprovedUpdate {
 
 function Request-AudioGuardScan {
     try {
-        $event = [Threading.EventWaitHandle]::OpenExisting('Global\EricSoft.FuckNahimic.Wake', [Security.AccessControl.EventWaitHandleRights]::Modify)
+        $event = [Threading.EventWaitHandle]::OpenExisting('Global\EricSoft.FuckNahimic.Wake')
         try { return $event.Set() }
         finally { $event.Dispose() }
     } catch [Threading.WaitHandleCannotBeOpenedException] {
@@ -2002,10 +2025,12 @@ $PnpUtil = Join-Path $env:SystemRoot 'System32\pnputil.exe'
 # Existing update matching and exact-revision approval helpers are added here.
 # GUARD_DEFINITIONS
 
-if ((Get-Service -Name wuauserv).StartType -eq 'Disabled') {
+$updateService = Get-Service -Name wuauserv
+if ($updateService.StartType -eq 'Disabled') {
     if ($Mode -eq 'Allow') { throw 'Windows Update is disabled.' }
     return
 }
+if ($Mode -eq 'Scan' -and $updateService.Status -ne 'Running') { return }
 $searcher = (New-Object -ComObject Microsoft.Update.Session).CreateUpdateSearcher()
 $searcher.Online = $false
 $searcher.IncludePotentiallySupersededUpdates = $true
@@ -2127,8 +2152,12 @@ function Get-TargetUpdateMatch {
         $oemAudio = $hardwareId -in $script:AudioUpdateScope.HardwareIds -and
             $provider -match $OemAudioProvider -and
             $entry.DriverClass -in 'MEDIA','Extension','SoftwareComponent','AudioProcessingObject'
+        # Windows Update reports these SWC matches as OtherHardware even when the
+        # update title and matched device are SoftwareComponent audio packages.
         $realtekSoftware = $hardwareId -in $script:AudioUpdateScope.RealtekHardwareIds -and
-            $provider -match $RealtekAudioProvider -and $entry.DriverClass -in 'SoftwareComponent','AudioProcessingObject'
+            $provider -match $RealtekAudioProvider -and
+            $hardwareId -match '^SWC\\' -and
+            $entry.DriverClass -in 'SoftwareComponent','AudioProcessingObject','OtherHardware'
         if (-not ($oemAudio -or $realtekSoftware)) {
             $nahimicSoftware = $hardwareId -match '^(?:ROOT|SWC|SWD)\\' -and
                 $entry.DriverClass -in 'MEDIA','Extension','SoftwareComponent','AudioProcessingObject' -and
@@ -2230,6 +2259,34 @@ function Get-WindowsUpdateStartMode {
     }
 }
 
+function Get-WindowsUpdateAutomaticPolicy {
+    $path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU'
+    $policy = $null
+    try {
+        $policy = Get-ItemProperty -LiteralPath $path -ErrorAction Stop
+    } catch [System.Management.Automation.ItemNotFoundException] {
+        # An unconfigured policy may have no AU key.
+    }
+    $values = [ordered]@{ NoAutoUpdate = $null; AUOptions = $null }
+    if ($policy) {
+        foreach ($name in 'NoAutoUpdate','AUOptions') {
+            $property = $policy.PSObject.Properties[$name]
+            if ($property) { $values[$name] = $property.Value }
+        }
+    }
+    [pscustomobject]$values
+}
+
+function Get-WindowsUpdateSnapshot {
+    $service = Get-Service -Name wuauserv
+    $policy = Get-WindowsUpdateAutomaticPolicy
+    [pscustomobject]@{
+        StartMode = Get-WindowsUpdateStartMode
+        WasRunning = $service.Status -in 'Running','StartPending'
+        AutomaticPolicy = $policy
+    }
+}
+
 function Set-WindowsUpdateStartMode {
     param([ValidateSet('auto','delayed-auto','demand','disabled')][string]$Mode)
     $sc = Join-Path ([Environment]::SystemDirectory) 'sc.exe'
@@ -2245,7 +2302,7 @@ function Restore-WindowsUpdateService {
     param([string]$OriginalMode, [bool]$WasRunning)
 
     $current = Get-WindowsUpdateStartMode
-    if ($current -eq 'disabled') {
+    if ($current -eq 'disabled' -and $OriginalMode -ne 'disabled') {
         Set-WindowsUpdateStartMode $OriginalMode
     } elseif ($current -ne $OriginalMode) {
         Write-Warning "Windows Update startup mode was changed separately to $current. Leaving it in that mode."
@@ -2256,8 +2313,11 @@ function Restore-WindowsUpdateService {
     if ($WasRunning -and $service.Status -ne 'Running') {
         Start-Service -Name wuauserv
         $service.WaitForStatus('Running', [TimeSpan]::FromSeconds(30))
+    } elseif (-not $WasRunning -and $service.Status -ne 'Stopped') {
+        Stop-Service -Name wuauserv
+        $service.WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30))
     }
-    Write-Host "Windows Update service startup mode restored: $OriginalMode."
+    Write-Host "Windows Update restored: $OriginalMode, $($service.Status)."
 }
 
 function Get-EndpointWorkerDigest {
@@ -2320,6 +2380,15 @@ function Invoke-WindowsUpdateRecovery {
     Restore-WindowsUpdateService $State.StartMode ([bool]$State.WasRunning)
     Unregister-ScheduledTask -TaskName $State.RecoveryTask -TaskPath '\' -Confirm:$false
 
+    if ($State.PSObject.Properties['AutomaticPolicy']) {
+        $policy = Get-WindowsUpdateAutomaticPolicy
+        $recorded = $State.AutomaticPolicy
+        if ($policy.NoAutoUpdate -ne $recorded.NoAutoUpdate -or $policy.AUOptions -ne $recorded.AUOptions) {
+            Write-Warning 'The automatic-update policy changed separately during maintenance. The current policy was left in place.'
+        }
+    }
+    # Cached and online WUA calls can start a previously stopped service.
+    if (-not $State.WasRunning -or $State.StartMode -eq 'disabled' -or (Get-WindowsUpdateStartMode) -ne $State.StartMode) { return }
     $guardReady = Request-AudioGuardScan
     if ($rebooted -and -not $guardReady) {
         $TargetPattern = $State.TargetPattern
@@ -2349,7 +2418,7 @@ function Invoke-WindowsUpdateRecovery {
 function New-WindowsUpdateRecoveryCommand {
     param([hashtable]$State)
     $definitions = foreach ($name in @(
-        'Get-WindowsUpdateStartMode','Set-WindowsUpdateStartMode','Restore-WindowsUpdateService',
+        'Get-WindowsUpdateStartMode','Get-WindowsUpdateAutomaticPolicy','Set-WindowsUpdateStartMode','Restore-WindowsUpdateService',
         'Get-EndpointWorkerDigest','Wait-ForEndpointWorker','Get-TargetUpdateMatch',
         'Get-WindowsUpdateResult','Get-WindowsUpdateOperations','Hide-PlannedWindowsUpdate',
         'Test-GuardApprovedUpdate','Request-AudioGuardScan','Invoke-WindowsUpdateRecovery',
@@ -2404,6 +2473,7 @@ function Get-WindowsUpdateRecoveryXml {
     <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
     <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
     <StartWhenAvailable>true</StartWhenAvailable>
+    <Enabled>true</Enabled>
     <ExecutionTimeLimit>PT12M</ExecutionTimeLimit>
     <RestartOnFailure><Interval>PT2M</Interval><Count>3</Count></RestartOnFailure>
   </Settings>
@@ -2417,32 +2487,80 @@ function Get-WindowsUpdateRecoveryXml {
 "@
 }
 
+function Read-WindowsUpdateRecoveryState {
+    param($Task, [string]$TaskName, [string]$PowerShellExe)
+    $actions = @($Task.Actions)
+    if ($Task.Principal.UserId -notmatch '^(?:S-1-5-18|(?:NT AUTHORITY\\)?SYSTEM)$' -or
+        $actions.Count -ne 1 -or $actions[0].Execute -ne $PowerShellExe) {
+        throw 'The Windows Update recovery task name is in use by an unrecognized action.'
+    }
+    $argsMatch = [regex]::Match([string]$actions[0].Arguments, '(?i)(?:^|\s)-EncodedCommand\s+"?([a-z0-9+/=]{1,30000})"?(?:\s|$)')
+    if (-not $argsMatch.Success) { throw 'The Windows Update recovery task does not contain the expected command.' }
+    $launcher = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($argsMatch.Groups[1].Value))
+    $payload = [regex]::Match($launcher, "FromBase64String\('([a-zA-Z0-9+/=]+)'\)")
+    if (-not $payload.Success) { throw 'The existing Windows Update recovery state could not be read.' }
+
+    $memory = [IO.MemoryStream]::new([Convert]::FromBase64String($payload.Groups[1].Value))
+    $zip = [IO.Compression.GZipStream]::new($memory, [IO.Compression.CompressionMode]::Decompress)
+    $reader = [IO.StreamReader]::new($zip, [Text.Encoding]::UTF8)
+    try {
+        $buffer = [char[]]::new(131072)
+        $count = $reader.ReadBlock($buffer, 0, $buffer.Length)
+        if ($count -eq $buffer.Length) { throw 'The existing recovery payload exceeds the supported size.' }
+        $command = [string]::new($buffer, 0, $count)
+    } finally { $reader.Dispose() }
+
+    $record = [regex]::Match($command, "(?m)^try \{ Invoke-WindowsUpdateRecovery \(ConvertFrom-Json '((?:[^'\r\n]|'')*)'\); exit 0 \}")
+    if (-not $record.Success) { throw 'The existing recovery task does not contain a recognized state.' }
+    $state = $record.Groups[1].Value.Replace("''", "'") | ConvertFrom-Json -ErrorAction Stop
+    if ($state.RecoveryTask -ne $TaskName -or $state.StartMode -notin 'auto','delayed-auto','demand' -or
+        $state.WasRunning -isnot [bool]) {
+        throw 'The existing Windows Update recovery state does not match this task.'
+    }
+    $state
+}
+
 function Suspend-WindowsUpdateForCleanup {
     $taskName = $script:WindowsUpdateRecoveryTaskName
-    $originalMode = Get-WindowsUpdateStartMode
+    $powerShell = Join-Path ([Environment]::SystemDirectory) 'WindowsPowerShell\v1.0\powershell.exe'
+    $currentMode = Get-WindowsUpdateStartMode
+    $service = Get-Service -Name wuauserv
     $existing = Get-ScheduledTask -TaskName $taskName -TaskPath '\' -ErrorAction SilentlyContinue
-    if ($originalMode -eq 'disabled' -and (Get-Service -Name wuauserv).Status -ne 'Stopped') {
+    if ($currentMode -eq 'disabled' -and $service.Status -ne 'Stopped') {
         throw 'Windows Update startup is disabled, but the service is still running. Cleanup has not started.'
     }
+
+    $prior = $null
     if ($existing) {
-        if ($existing.Principal.UserId -notmatch '^(?:S-1-5-18|(?:NT AUTHORITY\\)?SYSTEM)$') {
-            throw 'The recovery task name is in use by a task with a different account.'
+        if ($existing.State -in 'Running','Queued') {
+            throw 'The previous Windows Update recovery is running. Let it finish before retrying.'
         }
-        if ($originalMode -ne 'disabled') { throw 'An earlier Windows Update recovery task is still pending.' }
-        $script:WindowsUpdateSuspended = $true
-        Write-Host 'Windows Update is already paused by the previous cleanup. Using its scheduled recovery.'
-        return
+        $prior = Read-WindowsUpdateRecoveryState $existing $taskName $powerShell
     }
-    if ($originalMode -eq 'disabled') {
+    if ($currentMode -eq 'disabled' -and -not $prior) {
         $script:WindowsUpdateSuspended = $true
         Write-Host 'Windows Update was already disabled. Its service configuration is being preserved.'
         return
     }
 
-    $service = Get-Service -Name wuauserv
-    $wasRunning = $service.Status -ne 'Stopped'
-    $installer = (New-Object -ComObject Microsoft.Update.Session).CreateUpdateInstaller()
-    if ($installer.IsBusy) { throw 'Windows Update is currently installing or uninstalling an update. Try cleanup after it finishes.' }
+    $before = $script:WindowsUpdateBeforeCleanup
+    $automaticPolicy = $before.AutomaticPolicy
+    if ($currentMode -eq 'disabled') {
+        $originalMode = $prior.StartMode
+        $wasRunning = $prior.WasRunning
+        if ($prior.PSObject.Properties['AutomaticPolicy']) { $automaticPolicy = $prior.AutomaticPolicy }
+    } else {
+        if ($currentMode -ne $before.StartMode) {
+            throw 'The Windows Update startup mode changed during the preview. Refresh the cleanup plan.'
+        }
+        $originalMode = $before.StartMode
+        $wasRunning = $before.WasRunning
+    }
+    $installer = $null
+    if ($service.Status -ne 'Stopped') {
+        $installer = (New-Object -ComObject Microsoft.Update.Session).CreateUpdateInstaller()
+        if ($installer.IsBusy) { throw 'Windows Update is currently installing or uninstalling an update. Try cleanup after it finishes.' }
+    }
 
     $endpointTask = if ($script:EndpointRestoreTaskName) {
         Get-ScheduledTask -TaskName $script:EndpointRestoreTaskName -TaskPath '\' -ErrorAction SilentlyContinue
@@ -2451,33 +2569,40 @@ function Suspend-WindowsUpdateForCleanup {
     $boot = (Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToUniversalTime()
     $deadline = [DateTime]::UtcNow.AddMinutes(30)
     $state = @{
-        RecoveryTask = $taskName; StartMode = $originalMode; WasRunning = $wasRunning
+        RecoveryTask = $taskName; StartMode = $originalMode; WasRunning = $wasRunning; AutomaticPolicy = $automaticPolicy
         BootTicks = $boot.Ticks.ToString(); EndpointTaskName = $script:EndpointRestoreTaskName; EndpointDigest = $digest
         TargetPattern = $TargetPattern; NahimicProvider = $NahimicProvider
         OemAudioProvider = $OemAudioProvider; RealtekAudioProvider = $RealtekAudioProvider
         GenericInf = $GenericInf; MediaClass = $MediaClass; ExtensionClass = $ExtensionClass
     }
 
-    $powerShell = Join-Path ([Environment]::SystemDirectory) 'WindowsPowerShell\v1.0\powershell.exe'
     $xml = Get-WindowsUpdateRecoveryXml $powerShell (New-WindowsUpdateRecoveryCommand $state) $deadline
     $scheduler = New-Object -ComObject Schedule.Service
     $scheduler.Connect()
     $root = $scheduler.GetFolder('\')
-    $recovery = $root.RegisterTask($taskName, $xml, 2, 'SYSTEM', $null, 5, $null)
-    if (-not $recovery.Enabled) {
-        Unregister-ScheduledTask -TaskName $taskName -TaskPath '\' -Confirm:$false
-        throw 'The Windows Update recovery task was registered but is disabled.'
+    $registrationMode = 2 # TASK_CREATE
+    if ($existing) {
+        $pending = Get-ScheduledTask -TaskName $taskName -TaskPath '\' -ErrorAction SilentlyContinue
+        if (-not $pending -or $pending.State -in 'Running','Queued' -or
+            $pending.Actions.Count -ne 1 -or $pending.Actions[0].Arguments -ne $existing.Actions[0].Arguments -or
+            $pending.Actions[0].Execute -ne $existing.Actions[0].Execute -or $pending.Principal.UserId -ne $existing.Principal.UserId) {
+            throw 'The pending Windows Update recovery task changed while the cleanup was being prepared.'
+        }
+        $registrationMode = 4 # TASK_UPDATE
     }
+    $recovery = $root.RegisterTask($taskName, $xml, $registrationMode, 'SYSTEM', $null, 5, $null)
     try {
-        if ($installer.IsBusy) { throw 'Windows Update started installing an update before the pause.' }
-        Set-WindowsUpdateStartMode disabled
+        if (-not $recovery.Enabled) { throw 'The Windows Update recovery task was registered but is disabled.' }
+        if ($installer -and $installer.IsBusy) { throw 'Windows Update started installing an update before the pause.' }
+        if ($currentMode -ne 'disabled') { Set-WindowsUpdateStartMode disabled }
         $service.Refresh()
         if ($service.Status -ne 'Stopped') {
             Stop-Service -Name wuauserv
             $service.WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30))
         }
         $script:WindowsUpdateSuspended = $true
-        Write-Host "Windows Update paused. Recovery task: $taskName. Fallback: $($deadline.ToLocalTime().ToString('HH:mm:ss'))."
+        if ($existing) { Write-Host "Refreshed the pending Windows Update recovery task: $taskName." }
+        Write-Host "Windows Update paused. Recovery state: $originalMode, service was running: $wasRunning. Fallback: $($deadline.ToLocalTime().ToString('HH:mm:ss'))."
     } catch {
         $pauseError = $_
         try {
@@ -2641,6 +2766,10 @@ function New-RemovalPlan {
     $script:AudioUpdateScope = $null
     $script:AudioEndpointInstance = $null
     $script:EndpointRestoreTaskName = $null
+    $script:WindowsUpdateBeforeCleanup = Get-WindowsUpdateSnapshot
+    $before = $script:WindowsUpdateBeforeCleanup
+    $policy = $before.AutomaticPolicy
+    Write-Host "Windows Update before cleanup: StartMode=$($before.StartMode), WasRunning=$($before.WasRunning), AUOptions=$($policy.AUOptions), NoAutoUpdate=$($policy.NoAutoUpdate)."
 
     # The driver scan is required. Without bindings, the plan cannot safely proceed.
     $pnpDevices = @(Get-PnpDevice)
@@ -2679,10 +2808,10 @@ function New-RemovalPlan {
     } catch { Add-ScanIssue "Scheduled task inventory: $_" }
     $needsMaintenance = [bool]($script:Plan | Where-Object Kind -NotIn 'WindowsUpdate','OemUpdateRecheck')
     try {
-        if ((Get-WindowsUpdateStartMode) -ne 'disabled') {
+        if ($before.StartMode -ne 'disabled' -and $before.WasRunning) {
             Add-WindowsUpdatePlan
         } else {
-            Write-Host 'Windows Update service is disabled; skipping the search.'
+            Write-Host 'Windows Update was disabled or stopped; skipping the search to preserve its state.'
         }
     } catch { Add-ScanIssue "Windows Update inventory: $_" }
     if ($needsMaintenance) {
@@ -3157,6 +3286,11 @@ try {
         Write-Warning 'Windows reported a restart is required before continuing.'
     }
 } finally {
-    if ($transcriptStarted) { Stop-Transcript | Out-Null }
+    if ($transcriptStarted) {
+        try { Stop-Transcript | Out-Null }
+        catch { Write-Warning "Could not stop transcript: $_" }
+    }
 }
+Write-Host "Finished with exit code $result. Review the transcript if one was created."
+Wait-ForUserToReview
 exit $result
