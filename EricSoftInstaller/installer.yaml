@@ -1,0 +1,186 @@
+# EricSoftInstaller 安装配置
+# 直接编辑此文件后打包。必填项填入实际值；可选项为空或格式无效时采用默认行为。
+# YAML 用两个空格缩进。布尔值使用 true / false，整数不加引号，列表使用 [值1, 值2]。
+# 含 #、冒号加空格或前导空格的字符串请用引号；多行文本可用 |-。
+
+# ── 安装必填 ───────────────────────────────────────────────────
+productName: '' # 应用显示名称。字符串，例如 '我的应用'。
+productId: '' # 稳定且唯一的产品标识。建议使用 Vendor.App 格式，不含空格，最长 128 字符。
+mainExecutable: '' # 载荷根目录中的主程序文件名。填带 .exe 的文件名，不带目录。
+
+# ── 安装信息与路径 ─────────────────────────────────────────────
+version: '' # 可选的显示版本。接受 1.2.3 或 1.2.3.4，每段是 0–65535。
+publisher: '' # 发布者显示名称。留空时隐藏。
+architecture: x64 # 目标架构。接受 x64、arm64 或 x86。
+icon: '' # 可选的 ICO 文件，路径相对于本配置，例如 'assets/app.ico'。
+installDirectoryName: '' # 默认补上的应用目录名，默认取产品 ID。
+defaultInstallSubdirectory: '\AppData\' # \AppData\ 按当前用户安装，\ProgramFiles\ 按整机安装。可指定完整子路径，例如 '\ProgramFiles\Vendor\MyApp'。
+dataSubdirectory: '' # 相对于 %ProgramData% 的共享数据路径，默认取产品 ID。两种安装范围都适用；卸载时可选择保留或删除。
+tempSubdirectory: '' # 相对于系统临时目录的工作和日志路径，默认为 EricSoftInstaller/<产品 ID>。
+uninstallerName: Uninstall.exe # 安装目录里的卸载器文件名，须以 .exe 结尾。
+defaultKeepData: true # 卸载时默认保留数据。
+
+# ── 快捷方式与关停 ─────────────────────────────────────────────
+shortcutName: '' # 桌面与开始菜单快捷方式名称。不带 .lnk，默认取应用名。
+appUserModelId: '' # Windows Shell 应用标识。无空格、最多 128 字符，默认取产品 ID。
+startupValueName: '' # 对应安装范围的 Run 启动项名称。卸载时会匹配该名称及 EXE 路径，默认取产品 ID。
+defaultDesktopShortcut: false # 新安装时默认创建桌面快捷方式。
+defaultStartMenuShortcut: true # 新安装时默认创建开始菜单快捷方式。
+companionExecutables: [] # 须等待退出的同目录辅助程序。EXE 文件名列表，例 ['MyApp.Cli.exe']。
+shutdownPipeName: '' # 主程序的关停命名管道名。仅填名称，不带 \\.\pipe\ 前缀。
+shutdownPipeCommand: 'EXIT' # 写入上述关停管道的 UTF-8 命令字符串。
+
+# ── 载荷 ────────────────────────────────────────────────────────
+protectedPaths: [] # 安装目录根部保留的数据项。文件或目录名列表，例 ['Data', 'Cache']。不能使用安装器保留名称。
+requiredPayloadFiles: [] # 打包时检查的额外必需文件。相对路径列表，例 ['resources/app.dat']。
+excludedPayloadPatterns: ['*.pdb', '*.log', '*.bak'] # 载荷中拒绝出现的文件模式。通配符列表。
+
+# ── 安装模式与升级 ─────────────────────────────────────────────
+allowExtract: true # 允许图形界面和 --extract 仅解压应用文件。
+restartAfterInstall: false # 静默安装或升级成功后启动主程序。
+
+# ── 中英文文案 ─────────────────────────────────────────────────
+# 按 Windows 界面语言选用一组文案。未匹配时采用 en。
+# 值为显示文本，支持 {product} 和 {publisher}。单项留空或删除时隐藏对应文案。
+# 文案同时供安装器和卸载器使用。
+text:
+  zh-CN:
+    Installer_Title: "安装 {product}"
+    Installer_WindowTitle: "{product} 安装器"
+    Installer_UninstallWindowTitle: "{product} 卸载器"
+    Installer_WelcomeBody: "选择操作以继续。"
+    Installer_RegisteredBody: "检测到已注册安装，可直接升级。"
+    Installer_UpgradeTitle: "升级 {product}"
+    Installer_Upgrade: "升级"
+    Installer_BeginUpgrade: "开始升级"
+    Installer_Upgrading: "正在升级，请稍候……"
+    Installer_Upgraded: "升级完成。"
+    Installer_InstalledVersion: "已安装版本"
+    Installer_Publisher: "发布者"
+    Installer_Installing: "正在安装，请稍候……"
+    Installer_Extracting: "正在解压，请稍候……"
+    Installer_Uninstalling: "正在卸载，请稍候……"
+    Installer_Cancelled: "操作已取消。"
+    Installer_Choose: "选择路径与选项"
+    Installer_Overview: "确认操作"
+    Installer_Ready: "准备就绪。"
+    Installer_Complete: "操作完成"
+    Installer_FailedTitle: "操作未完成"
+    Installer_ExtractDirectory: "解压路径"
+    Installer_Extract: "解压"
+    Installer_ExtractDisabled: "此安装包仅支持安装和升级。"
+    Installer_ExtractOnly: "仅解压应用文件，不添加快捷方式、不注册系统，也不生成卸载器。"
+    Installer_Extracted: "解压完成。您可以打开解压目录。"
+    Installer_ExtractInstalled: "目标是已有安装目录，请选择其他解压目录。"
+    Installer_DirectoryOccupied: "目标目录中已有与安装包同名的文件，请选择其他目录。"
+    Installer_BeginInstall: "开始安装"
+    Installer_BeginExtract: "开始解压"
+    Installer_Version: "版本"
+    Installer_Back: "上一步"
+    Installer_Next: "下一步"
+    Installer_Browse: "浏览…"
+    Installer_Close: "关闭"
+    Installer_OpenDirectory: "打开路径"
+    Installer_OpenApplication: "打开应用"
+    Installer_CancelConfirm: "确定取消并退出吗？本次操作的临时文件将被清理。"
+    Installer_Cancelling: "正在取消并清理，请稍候……"
+    Installer_UninstallTitle: "卸载 {product}"
+    Installer_Description: "选择安装目录和快捷方式。安装将登记到当前用户的已安装应用中。"
+    Installer_MachineDescription: "选择安装目录和共享快捷方式。此安装适用于本机所有用户，需要管理员权限。"
+    Installer_RetainData: "保留数据"
+    Installer_UninstallDescription: "卸载 {product} 及已登记快捷方式，可在确认页选择是否保留数据。"
+    Installer_DataDirectory: "应用数据目录"
+    Installer_UninstallDataDefault: "请在下方选择是否保留数据。"
+    Installer_UninstallDataUnsafe: "数据目录与安装目录重叠，无法安全清理，请选择保留数据后重试。"
+    Installer_UninstallDataRequired: "静默卸载必须指定 --keep-data 或 --remove-data。"
+    Installer_Directory: "安装目录"
+    Installer_Desktop: "创建桌面快捷方式"
+    Installer_WillCreateDesktop: "将创建桌面快捷方式。"
+    Installer_StartMenu: "创建开始菜单快捷方式"
+    Installer_Install: "安装"
+    Installer_Uninstall: "卸载"
+    Installer_Cancel: "取消"
+    Installer_Installed: "安装完成。"
+    Installer_Uninstalled: "卸载完成，应用数据已删除。"
+    Installer_UninstalledRetained: "卸载完成，应用数据已保留。"
+    Installer_RetainedDataLocation: "数据保留位置"
+    Installer_Failed: "操作未完成，详细信息已写入临时目录中的安装日志。"
+    Installer_VerificationFailed: "安装包的 SHA-256 校验失败，安装已停止。"
+    Installer_InvalidDirectory: "请选择有效的应用专用安装目录。"
+    Installer_DirectoryNotWritable: "目标目录仍不可写，请检查目录权限或选择其他位置。"
+    Installer_AlreadyInstalled: "已在其他目录安装，请先卸载原有安装，或选择原安装目录。"
+    Installer_InvalidArguments: "安装器参数无效，请使用 --help 查看帮助。"
+    Installer_CloseApplication: "请先完全退出 {product}，再重试。"
+    Installer_Help: "{product} 安装器\n--directory <路径>  指定目标目录。\n--quiet  静默执行。\n--update  升级已登记安装。\n--sha256 <摘要>  执行前复核 Setup EXE 的 SHA-256。\n--desktop / --no-desktop  设置是否创建桌面快捷方式。\n--start-menu / --no-start-menu  设置是否创建开始菜单快捷方式。\n--help  显示帮助。"
+    Installer_ExtractHelp: "--extract  只解压，不登记应用。"
+    Installer_UninstallHelp: "{product} 卸载器\n--quiet  静默执行，须指定一个数据选项。\n--keep-data  保留配置的应用数据目录。\n--remove-data  删除配置的应用数据目录。\n--help  显示帮助。"
+  en:
+    Installer_Title: "Install {product}"
+    Installer_WindowTitle: "{product} Setup"
+    Installer_UninstallWindowTitle: "{product} Uninstaller"
+    Installer_WelcomeBody: "Choose an action to continue."
+    Installer_RegisteredBody: "A registered installation was found. You can upgrade it directly."
+    Installer_UpgradeTitle: "Upgrade {product}"
+    Installer_Upgrade: "Upgrade"
+    Installer_BeginUpgrade: "Upgrade"
+    Installer_Upgrading: "Upgrading, please wait…"
+    Installer_Upgraded: "Upgrade completed."
+    Installer_InstalledVersion: "Installed version"
+    Installer_Publisher: "Publisher"
+    Installer_Installing: "Installing, please wait…"
+    Installer_Extracting: "Extracting, please wait…"
+    Installer_Uninstalling: "Uninstalling, please wait…"
+    Installer_Cancelled: "Operation cancelled."
+    Installer_Choose: "Choose directory and options"
+    Installer_Overview: "Review your choices"
+    Installer_Ready: "Ready."
+    Installer_Complete: "Operation completed"
+    Installer_FailedTitle: "Operation not completed"
+    Installer_ExtractDirectory: "Extraction directory"
+    Installer_Extract: "Extract"
+    Installer_ExtractDisabled: "This package supports installation and upgrades only."
+    Installer_ExtractOnly: "Only application files will be extracted. No shortcuts, system registration or uninstaller will be created."
+    Installer_Extracted: "Extraction completed. You can open the extraction directory."
+    Installer_ExtractInstalled: "The destination contains an installation. Choose another extraction directory."
+    Installer_DirectoryOccupied: "The destination already has files with the same names as the package. Choose another directory."
+    Installer_BeginInstall: "Install"
+    Installer_BeginExtract: "Extract"
+    Installer_Version: "Version"
+    Installer_Back: "Back"
+    Installer_Next: "Next"
+    Installer_Browse: "Browse…"
+    Installer_Close: "Close"
+    Installer_OpenDirectory: "Open directory"
+    Installer_OpenApplication: "Open application"
+    Installer_CancelConfirm: "Cancel and exit? Temporary files from this operation will be cleaned up."
+    Installer_Cancelling: "Cancelling and cleaning up, please wait…"
+    Installer_UninstallTitle: "Uninstall {product}"
+    Installer_Description: "Choose the installation directory and shortcuts. The application is registered for the current user."
+    Installer_MachineDescription: "Choose the installation directory and shared shortcuts. Installation applies to all users and requires administrator permission."
+    Installer_RetainData: "Keep data"
+    Installer_UninstallDescription: "Remove {product} and its registered shortcuts. Choose whether to keep data on the confirmation page."
+    Installer_DataDirectory: "Application data directory"
+    Installer_UninstallDataDefault: "Data removal depends on the Keep data option below."
+    Installer_UninstallDataUnsafe: "The data and installation directories overlap. Select Keep data to uninstall safely."
+    Installer_UninstallDataRequired: "Silent uninstallation requires --keep-data or --remove-data."
+    Installer_Directory: "Installation directory"
+    Installer_Desktop: "Create a desktop shortcut"
+    Installer_WillCreateDesktop: "A desktop shortcut will be created."
+    Installer_StartMenu: "Create a Start menu shortcut"
+    Installer_Install: "Install"
+    Installer_Uninstall: "Uninstall"
+    Installer_Cancel: "Cancel"
+    Installer_Installed: "Installation completed."
+    Installer_Uninstalled: "Uninstallation completed. Application data has been removed."
+    Installer_UninstalledRetained: "Uninstallation completed. Application data has been retained."
+    Installer_RetainedDataLocation: "Retained data location"
+    Installer_Failed: "The operation could not be completed. Details were written to the setup log in the temporary directory."
+    Installer_VerificationFailed: "SHA-256 verification failed. Setup stopped before installation."
+    Installer_InvalidDirectory: "Choose a valid directory dedicated to this application."
+    Installer_DirectoryNotWritable: "The target directory is still not writable. Check its permissions or choose another location."
+    Installer_AlreadyInstalled: "The application is installed elsewhere. Uninstall it first or choose its existing directory."
+    Installer_InvalidArguments: "Invalid installer arguments. Use --help for usage."
+    Installer_CloseApplication: "Exit {product} completely, then try again."
+    Installer_Help: "{product} installer\n--directory <path>  Set the destination directory.\n--quiet  Run silently.\n--update  Upgrade a registered installation.\n--sha256 <digest>  Verify the Setup EXE before applying the package.\n--desktop / --no-desktop  Set the desktop shortcut choice.\n--start-menu / --no-start-menu  Set the Start menu shortcut choice.\n--help  Show help."
+    Installer_ExtractHelp: "--extract  Extract without registering the application."
+    Installer_UninstallHelp: "{product} uninstaller\n--quiet  Run silently. Requires one data option.\n--keep-data  Keep the configured application data directory.\n--remove-data  Remove the configured application data directory.\n--help  Show help."

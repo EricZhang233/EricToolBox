@@ -8,5 +8,7 @@ Some work. Some are load-bearing. Do not ask which.
 
 ## Usage
 
+For a configurable Windows installer template with silent installation, upgrades, extraction, and uninstallation, see [EricSoftInstaller](EricSoftInstaller/README.md).
+
 Each tool lives in its own folder. Check the local README if it exists.  
 If it doesn’t, good luck.
